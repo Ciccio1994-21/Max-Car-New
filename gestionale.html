@@ -150,25 +150,32 @@
                         ctx.drawImage(img, 0, 0, width, height);
                         resolve(canvas.toDataURL('image/jpeg', 0.7));
                     };
-                    img.onerror = () => resolve(base64Str); // Fallback se la compressione fallisce
+                    img.onerror = () => resolve(base64Str);
                 });
             };
 
             const saveCar = async (e) => {
-                if (e) e.preventDefault();
+                if (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
                 
-                // Log di debug per capire se la funzione viene chiamata
-                console.log("Inizio salvataggio auto...");
+                console.log("CLICCATO PUBBLICA ANNUNCIO - Inizio validazione...");
 
                 if (!db.current) {
-                    console.error("Database non inizializzato");
+                    alert("Errore: Database non pronto. Riprova tra pochi secondi.");
                     return;
                 }
                 
                 if (uploading) return;
                 
                 if (newCar.immagini.length === 0) {
-                    alert("Inserisci almeno una foto prima di pubblicare.");
+                    alert("Devi caricare almeno una foto.");
+                    return;
+                }
+
+                if (!newCar.marca || !newCar.modello || !newCar.prezzo) {
+                    alert("Compila tutti i campi obbligatori (Marca, Modello, Prezzo).");
                     return;
                 }
 
@@ -176,39 +183,38 @@
                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'max-car-tivoli';
                 
                 try {
-                    console.log("Compressione immagini in corso...");
+                    console.log("Stato: Compressione immagini...");
                     const compressedImgs = await Promise.all(
                         newCar.immagini.map(img => compressImage(img))
                     );
 
                     const carData = {
-                        marca: newCar.marca,
-                        modello: newCar.modello,
+                        marca: String(newCar.marca).trim(),
+                        modello: String(newCar.modello).trim(),
                         prezzo: Number(newCar.prezzo) || 0,
                         anno: Number(newCar.anno) || new Date().getFullYear(),
                         km: Number(newCar.km) || 0,
                         alimentazione: newCar.alimentazione,
                         categoria: newCar.categoria,
-                        descrizione: newCar.descrizione || '',
+                        descrizione: String(newCar.descrizione || '').trim(),
                         immagini: compressedImgs,
                         immagine: compressedImgs[0],
-                        userId: user ? user.uid : 'unknown',
-                        // Controllo di sicurezza per il timestamp
-                        createdAt: firebase && firebase.firestore ? firebase.firestore.FieldValue.serverTimestamp() : new Date()
+                        userId: user ? user.uid : 'anonymous',
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
                     };
 
-                    console.log("Invio dati a Firestore...");
+                    console.log("Stato: Invio a Firestore...", carData);
                     await db.current.collection(`artifacts/${appId}/public/data/automobili`).add(carData);
                     
-                    console.log("Salvataggio completato con successo.");
+                    console.log("SUCCESSO: Annuncio inviato.");
                     setNewCar({ 
                         marca: '', modello: '', prezzo: '', anno: '', km: '', 
                         alimentazione: 'Benzina', categoria: 'Berlina', descrizione: '', immagini: [] 
                     });
-                    alert("Annuncio pubblicato con successo!");
+                    alert("✅ Annuncio pubblicato correttamente!");
                 } catch (err) {
-                    console.error("Errore dettagliato nel salvataggio:", err);
-                    alert("Errore durante la pubblicazione: " + err.message);
+                    console.error("ERRORE DURANTE IL SALVATAGGIO:", err);
+                    alert("❌ Errore durante la pubblicazione: " + err.message);
                 } finally {
                     setUploading(false);
                 }
@@ -229,7 +235,7 @@
             const handleFile = (e) => {
                 const files = Array.from(e.target.files);
                 if (newCar.immagini.length + files.length > 5) {
-                    alert("Puoi caricare al massimo 5 foto per annuncio");
+                    alert("Massimo 5 foto consentite.");
                     return;
                 }
                 files.forEach(file => {
@@ -251,11 +257,21 @@
                 }));
             };
 
+            // Helper per capire perché il tasto è disabilitato
+            const getButtonStatus = () => {
+                if (uploading) return "Caricamento in corso...";
+                if (newCar.immagini.length === 0) return "Carica almeno una foto";
+                if (!newCar.marca) return "Inserisci la Marca";
+                if (!newCar.modello) return "Inserisci il Modello";
+                if (!newCar.prezzo) return "Inserisci il Prezzo";
+                return null;
+            };
+
             if (loading) return (
                 <div className="h-screen flex flex-col items-center justify-center gap-4 bg-slate-950">
                     <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-red-600"></div>
                     <div className="font-bold uppercase tracking-widest text-slate-500 text-xs text-center px-4">
-                        Sincronizzazione Database...
+                        Inizializzazione Sistema...
                     </div>
                 </div>
             );
@@ -266,22 +282,21 @@
                         <div>
                             <h1 className="text-2xl font-black text-red-600 uppercase italic leading-none">Max Car | Gestionale</h1>
                             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">
-                                {user ? `ID Operatore: ${user.uid.substring(0, 8)}` : 'Accesso limitato'}
+                                {user ? `SESSIONE ATTIVA: ${user.uid.substring(0, 8)}` : 'SINCRO...'}
                             </p>
                         </div>
                         <div className="hidden md:flex items-center gap-2 bg-slate-800 px-4 py-2 rounded-full border border-white/5 text-[10px] font-bold uppercase tracking-widest">
                             <span className={`w-2 h-2 rounded-full ${user ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`}></span>
-                            {user ? 'Sistema Attivo' : 'Sincronizzazione'}
+                            Sistema Online
                         </div>
                     </header>
 
                     <div className="grid lg:grid-cols-3 gap-10">
-                        {/* Form Colonna */}
                         <div className="lg:col-span-1">
-                            <div className="bg-slate-800 p-6 rounded-3xl shadow-2xl sticky top-6 border border-white/5">
+                            <form onSubmit={saveCar} className="bg-slate-800 p-6 rounded-3xl shadow-2xl sticky top-6 border border-white/5">
                                 <h2 className="text-lg font-bold mb-6 flex items-center gap-2 leading-none uppercase italic">
                                     <i data-lucide="plus-square" className="text-red-600 w-5 h-5"></i> 
-                                    Nuovo Veicolo
+                                    Nuovo Annuncio
                                 </h2>
                                 
                                 <div className="space-y-4">
@@ -326,18 +341,18 @@
                                     </div>
 
                                     <div className="space-y-1">
-                                        <label className="text-[9px] uppercase font-bold text-slate-500 px-1">Chilometraggio (KM)</label>
+                                        <label className="text-[9px] uppercase font-bold text-slate-500 px-1">KM Percorsi</label>
                                         <input required type="number" className="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl outline-none focus:border-red-600 transition text-sm text-white" value={newCar.km} onChange={e => setNewCar({...newCar, km: e.target.value})} />
                                     </div>
 
                                     <div className="space-y-1">
                                         <label className="text-[9px] uppercase font-bold text-slate-500 px-1">Descrizione</label>
-                                        <textarea placeholder="Breve descrizione del veicolo..." className="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl outline-none focus:border-red-600 transition text-sm text-white h-24 resize-none" value={newCar.descrizione} onChange={e => setNewCar({...newCar, descrizione: e.target.value})} />
+                                        <textarea placeholder="Dettagli aggiuntivi..." className="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl outline-none focus:border-red-600 transition text-sm text-white h-24 resize-none" value={newCar.descrizione} onChange={e => setNewCar({...newCar, descrizione: e.target.value})} />
                                     </div>
                                     
                                     <div className="space-y-3 pt-2">
                                         <label className="text-[9px] uppercase font-bold text-slate-500 px-1 flex justify-between">
-                                            Foto Veicolo <span>{newCar.immagini.length}/5</span>
+                                            Media <span>{newCar.immagini.length}/5</span>
                                         </label>
                                         
                                         {newCar.immagini.length > 0 && (
@@ -345,11 +360,7 @@
                                                 {newCar.immagini.map((img, idx) => (
                                                     <div key={idx} className="relative w-16 h-16 flex-shrink-0 group">
                                                         <img src={img} className="w-full h-full object-cover rounded-lg border border-white/10" />
-                                                        <button 
-                                                            type="button"
-                                                            onClick={() => removeImage(idx)}
-                                                            className="absolute -top-1 -right-1 bg-red-600 rounded-full p-1 shadow-lg opacity-0 group-hover:opacity-100 transition"
-                                                        >
+                                                        <button type="button" onClick={() => removeImage(idx)} className="absolute -top-1 -right-1 bg-red-600 rounded-full p-1 shadow-lg opacity-0 group-hover:opacity-100 transition">
                                                             <i data-lucide="x" className="w-2 h-2"></i>
                                                         </button>
                                                     </div>
@@ -358,38 +369,41 @@
                                         )}
 
                                         {newCar.immagini.length < 5 && (
-                                            <div className="border-2 border-dashed border-slate-700 rounded-xl p-4 text-center cursor-pointer hover:bg-slate-900 transition relative overflow-hidden group min-h-[80px] flex flex-col items-center justify-center">
+                                            <div className="border-2 border-dashed border-slate-700 rounded-xl p-4 text-center cursor-pointer hover:bg-slate-900 transition relative group min-h-[80px] flex flex-col items-center justify-center">
                                                 <i data-lucide="image-plus" className="opacity-20 w-6 h-6 mb-1"></i>
-                                                <div className="text-[10px] font-bold uppercase opacity-40">Trascina o Carica</div>
+                                                <div className="text-[10px] font-bold uppercase opacity-40">Aggiungi Foto</div>
                                                 <input type="file" multiple className="absolute inset-0 opacity-0 cursor-pointer" accept="image/*" onChange={handleFile} />
                                             </div>
                                         )}
                                     </div>
                                     
-                                    <button 
-                                        type="button"
-                                        onClick={saveCar}
-                                        disabled={newCar.immagini.length === 0 || uploading || !newCar.marca || !newCar.modello} 
-                                        className="w-full bg-red-600 py-4 rounded-xl font-black uppercase shadow-lg hover:bg-red-700 transition disabled:opacity-30 disabled:grayscale flex items-center justify-center gap-2 mt-4"
-                                    >
-                                        {uploading ? (
-                                            <>
-                                                <div className="animate-spin h-4 w-4 border-2 border-white/30 border-t-white rounded-full"></div>
-                                                Pubblicazione...
-                                            </>
-                                        ) : 'Pubblica Annuncio'}
-                                    </button>
+                                    <div className="pt-2">
+                                        {getButtonStatus() && (
+                                            <p className="text-center text-red-500 text-[10px] font-bold uppercase mb-2 animate-pulse">
+                                                {getButtonStatus()}
+                                            </p>
+                                        )}
+                                        <button 
+                                            type="submit"
+                                            disabled={uploading || !!getButtonStatus()} 
+                                            className="w-full bg-red-600 py-4 rounded-xl font-black uppercase shadow-lg hover:bg-red-700 active:scale-95 transition disabled:opacity-20 disabled:grayscale flex items-center justify-center gap-2"
+                                        >
+                                            {uploading ? (
+                                                <>
+                                                    <div className="animate-spin h-4 w-4 border-2 border-white/30 border-t-white rounded-full"></div>
+                                                    Invio in corso...
+                                                </>
+                                            ) : 'Pubblica Annuncio'}
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
+                            </form>
                         </div>
 
-                        {/* Lista Colonna */}
                         <div className="lg:col-span-2">
-                            <div className="flex justify-between items-center mb-6">
-                                <h2 className="text-lg font-bold flex items-center gap-2 italic uppercase">
-                                    Veicoli in Vetrina <span className="bg-red-600 text-white text-[10px] px-2 py-0.5 rounded-full not-italic">{autoList.length}</span>
-                                </h2>
-                            </div>
+                            <h2 className="text-lg font-bold flex items-center gap-2 italic uppercase mb-6">
+                                Veicoli Online <span className="bg-red-600 text-white text-[10px] px-2 py-0.5 rounded-full not-italic">{autoList.length}</span>
+                            </h2>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {autoList.sort((a,b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)).map(car => (
                                     <div key={car.id} className="bg-slate-800/40 rounded-2xl p-4 flex gap-4 items-start border border-white/5 hover:border-red-600/30 transition-all duration-300">
@@ -411,23 +425,11 @@
                                             <div className="flex flex-wrap gap-1.5 mb-2">
                                                 <span className="text-[9px] font-bold uppercase text-red-500 bg-red-500/10 px-2 py-0.5 rounded-md">€{car.prezzo?.toLocaleString()}</span>
                                                 <span className="text-[9px] font-bold uppercase text-slate-400 bg-slate-700/50 px-2 py-0.5 rounded-md">{car.km?.toLocaleString()} KM</span>
-                                                <span className="text-[9px] font-bold uppercase text-slate-400 bg-slate-700/50 px-2 py-0.5 rounded-md">{car.categoria}</span>
                                             </div>
                                             <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mb-1">{car.anno} • {car.alimentazione}</p>
-                                            {car.descrizione && (
-                                                <p className="text-[10px] text-slate-400 line-clamp-2 italic border-t border-white/5 pt-1 mt-1">
-                                                    {car.descrizione}
-                                                </p>
-                                            )}
                                         </div>
                                     </div>
                                 ))}
-                                {autoList.length === 0 && (
-                                    <div className="col-span-full border border-dashed border-white/5 rounded-3xl py-20 text-center opacity-10">
-                                        <i data-lucide="car-front" className="mx-auto w-16 h-16 mb-2"></i>
-                                        <p className="uppercase font-bold text-xs tracking-[0.3em]">Nessun Veicolo</p>
-                                    </div>
-                                )}
                             </div>
                         </div>
                     </div>
