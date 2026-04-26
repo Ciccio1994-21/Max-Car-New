@@ -25,14 +25,20 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
+        // Inizializzazione Firebase fuori dal componente per persistenza
+        const firebaseConfig = JSON.parse(__firebase_config);
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db_ref = firebase.firestore();
+        const auth_ref = firebase.auth();
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'max-car-tivoli';
+
         const App = () => {
             const [autoList, setAutoList] = useState([]);
             const [loading, setLoading] = useState(true);
             const [uploading, setUploading] = useState(false);
             const [user, setUser] = useState(null);
-            const [dbStatus, setDbStatus] = useState('initializing');
-            const db = useRef(null);
-            const auth = useRef(null);
             
             const [newCar, setNewCar] = useState({
                 marca: '', 
@@ -46,71 +52,43 @@
                 immagini: []
             });
 
-            // Funzione robusta per l'inizializzazione o il recupero dell'istanza Firebase
-            const ensureFirebaseReady = async () => {
-                try {
-                    if (db.current && auth.current) return true;
-
-                    console.log("Controllo SDK Firebase...");
-                    if (typeof firebase === 'undefined') return false;
-
-                    if (!firebase.apps.length) {
-                        const config = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-                        if (!config) return false;
-                        firebase.initializeApp(config);
-                    }
-                    
-                    db.current = firebase.firestore();
-                    auth.current = firebase.auth();
-                    
-                    // Assicuriamoci che l'utente sia autenticato se non lo è
-                    if (!auth.current.currentUser) {
-                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                            await auth.current.signInWithCustomToken(__initial_auth_token);
-                        } else {
-                            await auth.current.signInAnonymously();
-                        }
-                    }
-                    
-                    return true;
-                } catch (e) {
-                    console.error("Errore critico ensureFirebaseReady:", e);
-                    return false;
-                }
-            };
-
             useEffect(() => {
-                const initFirebase = async () => {
-                    const ready = await ensureFirebaseReady();
-                    if (!ready) {
-                        setLoading(false);
-                        setDbStatus('error');
-                        return;
-                    }
+                const initAuthAndData = async () => {
+                    try {
+                        // 1. Gestione Autenticazione (MANDATORIA PRIMA DI FIRESTORE)
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await auth_ref.signInWithCustomToken(__initial_auth_token);
+                        } else {
+                            await auth_ref.signInAnonymously();
+                        }
 
-                    auth.current.onAuthStateChanged((u) => {
-                        const currentUser = u || { uid: 'guest-' + Math.random().toString(36).substr(2, 5) };
-                        setUser(currentUser);
-                        setDbStatus('ready');
-                        
-                        const appId = typeof __app_id !== 'undefined' ? __app_id : 'max-car-tivoli';
-                        const path = `artifacts/${appId}/public/data/automobili`;
-                        
-                        db.current.collection(path).onSnapshot(
-                            snapshot => {
-                                setAutoList(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-                                setLoading(false);
-                                if (window.lucide) window.lucide.createIcons();
-                            },
-                            error => {
-                                console.error("Snapshot Error:", error);
-                                setLoading(false);
+                        auth_ref.onAuthStateChanged((u) => {
+                            if (u) {
+                                setUser(u);
+                                // 2. Listeners Dati (Percorso corretto Regola 1)
+                                const collectionPath = db_ref.collection('artifacts').doc(appId).collection('public').doc('data').collection('automobili');
+                                
+                                collectionPath.onSnapshot(
+                                    snapshot => {
+                                        const items = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                                        setAutoList(items);
+                                        setLoading(false);
+                                        if (window.lucide) window.lucide.createIcons();
+                                    },
+                                    err => {
+                                        console.error("Firestore Snapshot Error:", err);
+                                        setLoading(false);
+                                    }
+                                );
                             }
-                        );
-                    });
+                        });
+                    } catch (error) {
+                        console.error("Auth/Init Error:", error);
+                        setLoading(false);
+                    }
                 };
 
-                initFirebase();
+                initAuthAndData();
             }, []);
 
             useEffect(() => {
@@ -148,11 +126,8 @@
 
             const saveCar = async (e) => {
                 if (e) e.preventDefault();
-                
-                // Tentativo finale di riconnessione se db.current è null
-                const isReady = await ensureFirebaseReady();
-                if (!isReady || !db.current) {
-                    alert("Impossibile connettersi al database. Verifica la connessione internet e riprova.");
+                if (!user) {
+                    alert("Errore: Sessione non valida. Ricarica la pagina.");
                     return;
                 }
                 
@@ -163,7 +138,6 @@
                 }
 
                 setUploading(true);
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'max-car-tivoli';
                 
                 try {
                     const compressedImgs = await Promise.all(
@@ -181,11 +155,12 @@
                         descrizione: String(newCar.descrizione || '').trim(),
                         immagini: compressedImgs,
                         immagine: compressedImgs[0],
-                        userId: auth.current?.currentUser?.uid || 'anonymous',
-                        createdAt: firebase.firestore.FieldValue.serverTimestamp() || new Date()
+                        userId: user.uid,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
                     };
 
-                    await db.current.collection(`artifacts/${appId}/public/data/automobili`).add(carData);
+                    // Percorso corretto per il salvataggio
+                    await db_ref.collection('artifacts').doc(appId).collection('public').doc('data').collection('automobili').add(carData);
                     
                     setNewCar({ 
                         marca: '', modello: '', prezzo: '', anno: '', km: '', 
@@ -194,22 +169,21 @@
                     alert("✅ Annuncio pubblicato con successo!");
                 } catch (err) {
                     console.error("Firestore Add Error:", err);
-                    alert("Errore durante il salvataggio: " + err.message);
+                    alert("Errore salvataggio: Verificare i permessi del database.");
                 } finally {
                     setUploading(false);
                 }
             };
 
             const deleteCar = async (id) => {
-                const isReady = await ensureFirebaseReady();
-                if (!isReady) return;
+                if (!user) return;
                 if (!confirm("Sei sicuro di voler eliminare questo annuncio?")) return;
                 
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'max-car-tivoli';
                 try {
-                    await db.current.collection(`artifacts/${appId}/public/data/automobili`).doc(id).delete();
+                    await db_ref.collection('artifacts').doc(appId).collection('public').doc('data').collection('automobili').doc(id).delete();
                 } catch (err) {
                     console.error("Delete Error:", err);
+                    alert("Errore durante l'eliminazione.");
                 }
             };
 
@@ -241,7 +215,7 @@
             if (loading) return (
                 <div className="h-screen flex flex-col items-center justify-center gap-4 bg-slate-950">
                     <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-red-600"></div>
-                    <div className="font-bold uppercase tracking-widest text-slate-500 text-[10px]">Accesso al Database in corso...</div>
+                    <div className="font-bold uppercase tracking-widest text-slate-500 text-[10px]">Connessione Sicura in corso...</div>
                 </div>
             );
 
@@ -251,12 +225,12 @@
                         <div>
                             <h1 className="text-2xl font-black text-red-600 uppercase italic leading-none">Max Car | Gestionale</h1>
                             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">
-                                {user ? `OPERATORE: ${user.uid.substring(0, 8)}` : 'DISCONNECTED'}
+                                {user ? `SESSIONE ATTIVA: ${user.uid.substring(0, 12)}...` : 'RICONNESSIONE...'}
                             </p>
                         </div>
-                        <div className="hidden md:flex items-center gap-2 bg-slate-800 px-4 py-2 rounded-full border border-white/5 text-[10px] font-bold uppercase tracking-widest">
-                            <span className={`w-2 h-2 rounded-full ${dbStatus === 'ready' ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
-                            {dbStatus === 'ready' ? 'Database Online' : 'Tentativo di connessione...'}
+                        <div className="hidden md:flex items-center gap-2 bg-slate-800 px-4 py-2 rounded-full border border-white/5 text-[10px] font-bold uppercase tracking-widest text-green-500">
+                            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                            Sistema Online
                         </div>
                     </header>
 
