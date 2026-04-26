@@ -3,30 +3,35 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GESTIONALE | Max Car</title>
+    <title>Gestionale Max Car | Controllo Piazzale</title>
+    
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;700;800&display=swap');
-        body { font-family: 'Plus Jakarta Sans', sans-serif; background: #0f172a; color: white; margin: 0; padding: 0; }
-        .hide-scrollbar::-webkit-scrollbar { display: none; }
-        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        .glass-panel { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.05); }
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #0f172a; color: white; margin: 0; }
+        .glass { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.05); }
+        input, select { background: rgba(255, 255, 255, 0.05) !important; border: 1px solid rgba(255, 255, 255, 0.1) !important; color: white !important; }
+        input:focus { border-color: #ef4444 !important; outline: none; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
     </style>
 </head>
-<body>
+<body class="custom-scrollbar">
     <div id="root"></div>
+
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // Configurazione Firebase condivisa
-        const myFirebaseConfig = {
+        const firebaseConfig = {
             apiKey: "AIzaSyCB5yV6u4DtzUFb0jADUJobh8In52JNzp4",
             authDomain: "maxcar-7416d.firebaseapp.com",
             projectId: "maxcar-7416d",
@@ -36,187 +41,209 @@
             measurementId: "G-223C65R2FQ"
         };
 
-        if (!firebase.apps.length) firebase.initializeApp(myFirebaseConfig);
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
         const auth = firebase.auth();
-        const appId = "max-car-tivoli"; 
-        
-        // Questo percorso DEVE essere identico in index.html e gestionale.html
+        const appId = "max-car-tivoli";
         const COLLECTION_PATH = `artifacts/${appId}/public/data/automobili`;
 
         const App = () => {
             const [autoList, setAutoList] = useState([]);
-            const [loading, setLoading] = useState(true);
-            const [uploading, setUploading] = useState(false);
-            const [dbError, setDbError] = useState(null);
-            
+            const [isSubmitting, setIsSubmitting] = useState(false);
             const [newCar, setNewCar] = useState({
                 marca: '', modello: '', prezzo: '', anno: '', km: '', 
-                alimentazione: 'Benzina', categoria: 'Berlina', immagini: []
+                alimentazione: 'Diesel', categoria: 'SUV', immagine: ''
             });
 
             useEffect(() => {
                 const init = async () => {
-                    try {
-                        // Accesso anonimo per permessi Firestore
-                        await auth.signInAnonymously();
-                        
-                        // Sincronizzazione in tempo reale
-                        const unsubscribe = db.collection(COLLECTION_PATH)
-                            .orderBy('createdAt', 'desc')
-                            .onSnapshot(snapshot => {
-                                const items = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                                setAutoList(items);
-                                setLoading(false);
-                                setDbError(null);
-                            }, err => {
-                                console.error("Errore Firestore:", err);
-                                if (err.code === 'failed-precondition') {
-                                    // Fallback se l'indice non è ancora pronto
-                                    db.collection(COLLECTION_PATH).onSnapshot(s => {
-                                        const items = s.docs.map(d => ({ id: d.id, ...d.data() }));
-                                        setAutoList(items);
-                                        setLoading(false);
-                                    });
-                                } else {
-                                    setDbError(err.message);
-                                    setLoading(false);
-                                }
-                            });
-                        
-                        return () => unsubscribe();
-                    } catch (e) {
-                        setDbError("Errore di connessione");
-                        setLoading(false);
-                    }
+                    await auth.signInAnonymously();
+                    db.collection(COLLECTION_PATH).orderBy('createdAt', 'desc').onSnapshot(snap => {
+                        setAutoList(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                        if (window.lucide) window.lucide.createIcons();
+                    });
                 };
                 init();
             }, []);
 
-            useEffect(() => { if (window.lucide) window.lucide.createIcons(); }, [autoList, loading, dbError]);
-
+            // Funzione per comprimere l'immagine prima del caricamento
             const handleFile = (e) => {
-                const files = Array.from(e.target.files);
-                files.forEach(file => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => {
-                        setNewCar(prev => ({ ...prev, immagini: [...prev.immagini, reader.result].slice(0, 5) }));
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        let width = img.width;
+                        let height = img.height;
+
+                        // Ridimensiona se troppo grande (max 1200px)
+                        const MAX_WIDTH = 1200;
+                        if (width > MAX_WIDTH) {
+                            height *= MAX_WIDTH / width;
+                            width = MAX_WIDTH;
+                        }
+
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+
+                        // Esporta come JPEG compresso (0.7 di qualità)
+                        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                        setNewCar({...newCar, immagine: dataUrl});
                     };
-                    reader.readAsDataURL(file);
-                });
+                    img.src = event.target.result;
+                };
+                reader.readAsDataURL(file);
+            };
+
+            const removeImage = () => {
+                setNewCar({...newCar, immagine: ''});
+                document.getElementById('file-input').value = "";
             };
 
             const saveCar = async (e) => {
                 e.preventDefault();
-                if (uploading || dbError) return;
-                if (newCar.immagini.length === 0) { alert("Inserisci almeno una foto"); return; }
+                if (!newCar.immagine) return alert("Inserisci una foto!");
                 
-                setUploading(true);
+                setIsSubmitting(true);
                 try {
                     await db.collection(COLLECTION_PATH).add({
-                        marca: newCar.marca.trim(),
-                        modello: newCar.modello.trim(),
+                        ...newCar,
                         prezzo: Number(newCar.prezzo),
-                        anno: Number(newCar.anno),
                         km: Number(newCar.km),
-                        alimentazione: newCar.alimentazione,
-                        categoria: newCar.categoria,
-                        immagine: newCar.immagini[0], // Foto principale
-                        immagini: newCar.immagini,    // Gallery
+                        anno: Number(newCar.anno),
                         createdAt: firebase.firestore.FieldValue.serverTimestamp()
                     });
-                    
-                    setNewCar({ marca: '', modello: '', prezzo: '', anno: '', km: '', alimentazione: 'Benzina', categoria: 'Berlina', immagini: [] });
-                    alert("✅ Veicolo salvato e visibile sul sito!");
-                } catch (err) {
-                    alert("Errore nel salvataggio. Controlla la console.");
-                } finally { setUploading(false); }
+                    setNewCar({ marca: '', modello: '', prezzo: '', anno: '', km: '', alimentazione: 'Diesel', categoria: 'SUV', immagine: '' });
+                } catch (error) {
+                    console.error(error);
+                    alert("Errore durante il salvataggio");
+                }
+                setIsSubmitting(false);
             };
 
-            if (loading) return (
-                <div className="h-screen flex flex-col items-center justify-center bg-slate-950">
-                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-red-600 mb-4"></div>
-                    <p className="text-slate-500 text-[10px] uppercase font-bold tracking-widest italic">Connessione Max Car Database...</p>
-                </div>
-            );
+            const deleteCar = async (id) => {
+                if(confirm("Eliminare definitivamente questo annuncio?")) {
+                    await db.collection(COLLECTION_PATH).doc(id).delete();
+                }
+            };
 
             return (
-                <div className="p-4 md:p-8 max-w-7xl mx-auto min-h-screen">
-                    <header className="flex flex-col md:flex-row justify-between items-center mb-10 pb-6 border-b border-white/5 gap-4">
+                <div className="min-h-screen p-4 md:p-8">
+                    <header className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center mb-10 gap-4">
                         <div className="flex items-center gap-3">
-                            <div className="bg-red-600 p-2 rounded-lg shadow-lg shadow-red-600/20">
-                                <i data-lucide="layout-dashboard" className="text-white w-5 h-5"></i>
+                            <div className="bg-red-600 p-3 rounded-2xl shadow-lg shadow-red-600/20">
+                                <i data-lucide="layout-dashboard" className="w-6 h-6"></i>
                             </div>
-                            <h1 className="text-2xl font-black italic uppercase tracking-tighter text-white">MAX CAR <span className="text-red-600">GESTIONALE</span></h1>
+                            <div>
+                                <h1 className="text-2xl font-black uppercase tracking-tighter italic">Gestionale <span className="text-red-600">Max Car</span></h1>
+                                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-bold">Controllo Stock Piazzale</p>
+                            </div>
                         </div>
                     </header>
 
-                    <div className="grid lg:grid-cols-12 gap-8">
-                        <div className="lg:col-span-4">
-                            <form onSubmit={saveCar} className="bg-slate-900/50 p-6 rounded-[2.5rem] border border-white/5 shadow-2xl sticky top-8">
-                                <h3 className="text-[11px] font-black uppercase italic flex items-center gap-2 mb-8 text-slate-400 tracking-widest">Nuovo Inserimento</h3>
+                    <main className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        {/* Form di inserimento */}
+                        <div className="lg:col-span-1">
+                            <form onSubmit={saveCar} className="glass p-6 rounded-[2rem] sticky top-8">
+                                <h2 className="text-lg font-bold mb-6 flex items-center gap-2 uppercase tracking-tight">
+                                    <i data-lucide="plus-circle" className="w-5 h-5 text-red-600"></i> Aggiungi Veicolo
+                                </h2>
+
                                 <div className="space-y-4">
-                                    <input required placeholder="Marca" className="w-full bg-slate-950 border border-slate-800 p-4 rounded-2xl text-sm outline-none focus:border-red-600 transition" value={newCar.marca} onChange={e => setNewCar({...newCar, marca: e.target.value})} />
-                                    <input required placeholder="Modello" className="w-full bg-slate-950 border border-slate-800 p-4 rounded-2xl text-sm outline-none focus:border-red-600 transition" value={newCar.modello} onChange={e => setNewCar({...newCar, modello: e.target.value})} />
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <input required type="number" placeholder="Prezzo €" className="w-full bg-slate-950 border border-slate-800 p-4 rounded-2xl text-sm outline-none focus:border-red-600 transition" value={newCar.prezzo} onChange={e => setNewCar({...newCar, prezzo: e.target.value})} />
-                                        <input required type="number" placeholder="Km" className="w-full bg-slate-950 border border-slate-800 p-4 rounded-2xl text-sm outline-none focus:border-red-600 transition" value={newCar.km} onChange={e => setNewCar({...newCar, km: e.target.value})} />
+                                    {/* Caricamento Immagine con anteprima e rimozione */}
+                                    <div className="relative group">
+                                        {newCar.immagine ? (
+                                            <div className="relative rounded-2xl overflow-hidden aspect-video border border-white/10">
+                                                <img src={newCar.immagine} className="w-full h-full object-cover" />
+                                                <button 
+                                                    type="button"
+                                                    onClick={removeImage}
+                                                    className="absolute top-2 right-2 bg-red-600 text-white p-2 rounded-full hover:bg-red-700 transition shadow-lg"
+                                                >
+                                                    <i data-lucide="x" className="w-4 h-4"></i>
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <label className="flex flex-col items-center justify-center aspect-video rounded-2xl border-2 border-dashed border-white/10 bg-white/5 hover:bg-white/10 cursor-pointer transition">
+                                                <i data-lucide="camera" className="w-10 h-10 mb-2 opacity-20"></i>
+                                                <span className="text-[10px] font-bold uppercase opacity-40">Seleziona Foto</span>
+                                                <input id="file-input" type="file" className="hidden" accept="image/*" onChange={handleFile} />
+                                            </label>
+                                        )}
                                     </div>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <input required type="number" placeholder="Anno" className="w-full bg-slate-950 border border-slate-800 p-4 rounded-2xl text-sm outline-none focus:border-red-600 transition" value={newCar.anno} onChange={e => setNewCar({...newCar, anno: e.target.value})} />
-                                        <select className="w-full bg-slate-950 border border-slate-800 p-4 rounded-2xl text-sm text-slate-400 outline-none focus:border-red-600" value={newCar.alimentazione} onChange={e => setNewCar({...newCar, alimentazione: e.target.value})}>
-                                            <option>Benzina</option><option>Diesel</option><option>Ibrida</option><option>Elettrica</option><option>GPL</option>
+
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <input required placeholder="Marca" className="p-3 rounded-xl text-sm" value={newCar.marca} onChange={e => setNewCar({...newCar, marca: e.target.value})} />
+                                        <input required placeholder="Modello" className="p-3 rounded-xl text-sm" value={newCar.modello} onChange={e => setNewCar({...newCar, modello: e.target.value})} />
+                                    </div>
+
+                                    <div className="grid grid-cols-3 gap-2">
+                                        <input required type="number" placeholder="Prezzo" className="p-3 rounded-xl text-sm" value={newCar.prezzo} onChange={e => setNewCar({...newCar, prezzo: e.target.value})} />
+                                        <input required type="number" placeholder="Anno" className="p-3 rounded-xl text-sm" value={newCar.anno} onChange={e => setNewCar({...newCar, anno: e.target.value})} />
+                                        <input required type="number" placeholder="KM" className="p-3 rounded-xl text-sm" value={newCar.km} onChange={e => setNewCar({...newCar, km: e.target.value})} />
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <select className="p-3 rounded-xl text-sm" value={newCar.alimentazione} onChange={e => setNewCar({...newCar, alimentazione: e.target.value})}>
+                                            <option>Diesel</option>
+                                            <option>Benzina</option>
+                                            <option>Ibrida</option>
+                                            <option>Elettrica</option>
+                                            <option>GPL</option>
+                                        </select>
+                                        <select className="p-3 rounded-xl text-sm" value={newCar.categoria} onChange={e => setNewCar({...newCar, categoria: e.target.value})}>
+                                            <option>SUV</option>
+                                            <option>Berlina</option>
+                                            <option>Utilitaria</option>
+                                            <option>Station Wagon</option>
+                                            <option>Coupé</option>
                                         </select>
                                     </div>
-                                    <div className="bg-slate-950 border-2 border-dashed border-slate-800 p-6 rounded-2xl text-center">
-                                        <label className="cursor-pointer">
-                                            <i data-lucide="camera" className="text-red-600 w-8 h-8 mx-auto mb-2"></i>
-                                            <p className="text-[10px] font-black text-slate-400 uppercase">Aggiungi Foto</p>
-                                            <input type="file" className="hidden" accept="image/*" multiple onChange={handleFile} />
-                                        </label>
-                                        <div className="flex gap-2 mt-4 overflow-x-auto hide-scrollbar">
-                                            {newCar.immagini.map((img, i) => (
-                                                <img key={i} src={img} className="w-10 h-10 object-cover rounded-lg border border-white/10" />
-                                            ))}
-                                        </div>
-                                    </div>
-                                    <button disabled={uploading} className="w-full bg-red-600 py-5 rounded-2xl font-black uppercase text-[11px] tracking-widest shadow-xl shadow-red-600/20 hover:bg-red-700 transition-all disabled:opacity-50">
-                                        {uploading ? 'Caricamento...' : 'Pubblica Veicolo'}
+
+                                    <button 
+                                        disabled={isSubmitting}
+                                        className={`w-full py-4 rounded-2xl font-bold uppercase tracking-widest text-sm transition shadow-xl ${isSubmitting ? 'bg-slate-700' : 'bg-red-600 hover:bg-red-700'}`}
+                                    >
+                                        {isSubmitting ? 'Salvataggio...' : 'Pubblica nel piazzale'}
                                     </button>
                                 </div>
                             </form>
                         </div>
 
-                        <div className="lg:col-span-8">
-                            <h2 className="text-xl font-black uppercase italic text-white mb-8">Veicoli Online ({autoList.length})</h2>
-                            <div className="grid md:grid-cols-2 gap-6">
+                        {/* Elenco auto caricate */}
+                        <div className="lg:col-span-2 space-y-4">
+                            <div className="flex items-center justify-between mb-4">
+                                <h2 className="font-bold uppercase tracking-widest text-xs text-slate-500">Auto Attualmente Online ({autoList.length})</h2>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {autoList.map(car => (
-                                    <div key={car.id} className="bg-slate-900/40 rounded-[2.5rem] border border-white/5 overflow-hidden flex flex-col group transition-all">
-                                        <img src={car.immagine} className="h-48 w-full object-cover" />
-                                        <div className="p-6">
-                                            <div className="flex justify-between items-start mb-4">
-                                                <div>
-                                                    <p className="text-red-600 text-[10px] font-black uppercase tracking-widest">{car.marca}</p>
-                                                    <h4 className="text-lg font-bold text-white">{car.modello}</h4>
-                                                </div>
-                                                <div className="text-lg font-black text-white">€{car.prezzo?.toLocaleString()}</div>
-                                            </div>
-                                            <div className="flex justify-between items-center pt-4 border-t border-white/5">
-                                                <span className="text-[10px] font-bold text-slate-500 uppercase">{car.anno} • {car.km?.toLocaleString()} KM</span>
-                                                <button onClick={async () => {
-                                                    if(confirm("Vuoi rimuovere il veicolo?")) {
-                                                        await db.collection(COLLECTION_PATH).doc(car.id).delete();
-                                                    }
-                                                }} className="text-red-500 hover:scale-110 transition">
-                                                    <i data-lucide="trash-2" className="w-4 h-4"></i>
-                                                </button>
+                                    <div key={car.id} className="glass p-4 rounded-3xl flex gap-4 items-center group">
+                                        <div className="w-24 h-24 rounded-2xl overflow-hidden flex-shrink-0 border border-white/5">
+                                            <img src={car.immagine} className="w-full h-full object-cover" />
+                                        </div>
+                                        <div className="flex-grow">
+                                            <h3 className="font-bold uppercase text-sm leading-tight">{car.marca} <span className="text-red-600">{car.modello}</span></h3>
+                                            <div className="text-[10px] text-slate-500 font-bold mt-1 uppercase">
+                                                {car.anno} • {car.km?.toLocaleString()} KM • €{car.prezzo?.toLocaleString()}
                                             </div>
                                         </div>
+                                        <button 
+                                            onClick={() => deleteCar(car.id)}
+                                            className="p-3 bg-red-600/10 text-red-600 rounded-xl opacity-0 group-hover:opacity-100 transition hover:bg-red-600 hover:text-white"
+                                        >
+                                            <i data-lucide="trash-2" className="w-5 h-5"></i>
+                                        </button>
                                     </div>
                                 ))}
                             </div>
                         </div>
-                    </div>
+                    </main>
                 </div>
             );
         };
