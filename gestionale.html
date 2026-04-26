@@ -50,7 +50,7 @@
                     const waitForFirebase = () => {
                         return new Promise((resolve) => {
                             const interval = setInterval(() => {
-                                if (typeof firebase !== 'undefined' && firebase.apps) {
+                                if (typeof firebase !== 'undefined' && firebase.apps && firebase.firestore) {
                                     clearInterval(interval);
                                     resolve();
                                 }
@@ -80,7 +80,7 @@
                                 }
                             } catch (e) {
                                 console.error("Errore Autenticazione:", e);
-                                setUser({ uid: 'guest-user', isAnonymous: true });
+                                setUser({ uid: 'guest-user-' + Math.random().toString(36).substr(2, 9), isAnonymous: true });
                             }
                         };
 
@@ -106,7 +106,7 @@
                             } else {
                                 setTimeout(() => {
                                     if (!auth.current.currentUser) {
-                                        setUser({ uid: 'emergency-user', isAnonymous: true });
+                                        setUser({ uid: 'emergency-user-' + Math.random().toString(36).substr(2, 9), isAnonymous: true });
                                         setLoading(false);
                                     }
                                 }, 2000);
@@ -150,40 +150,65 @@
                         ctx.drawImage(img, 0, 0, width, height);
                         resolve(canvas.toDataURL('image/jpeg', 0.7));
                     };
+                    img.onerror = () => resolve(base64Str); // Fallback se la compressione fallisce
                 });
             };
 
             const saveCar = async (e) => {
-                e.preventDefault();
-                if (!db.current || uploading) return;
-                if (newCar.immagini.length === 0) return alert("Inserisci almeno una foto");
+                if (e) e.preventDefault();
+                
+                // Log di debug per capire se la funzione viene chiamata
+                console.log("Inizio salvataggio auto...");
+
+                if (!db.current) {
+                    console.error("Database non inizializzato");
+                    return;
+                }
+                
+                if (uploading) return;
+                
+                if (newCar.immagini.length === 0) {
+                    alert("Inserisci almeno una foto prima di pubblicare.");
+                    return;
+                }
 
                 setUploading(true);
                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'max-car-tivoli';
                 
                 try {
+                    console.log("Compressione immagini in corso...");
                     const compressedImgs = await Promise.all(
                         newCar.immagini.map(img => compressImage(img))
                     );
 
-                    await db.current.collection(`artifacts/${appId}/public/data/automobili`).add({
-                        ...newCar,
+                    const carData = {
+                        marca: newCar.marca,
+                        modello: newCar.modello,
+                        prezzo: Number(newCar.prezzo) || 0,
+                        anno: Number(newCar.anno) || new Date().getFullYear(),
+                        km: Number(newCar.km) || 0,
+                        alimentazione: newCar.alimentazione,
+                        categoria: newCar.categoria,
+                        descrizione: newCar.descrizione || '',
                         immagini: compressedImgs,
-                        prezzo: Number(newCar.prezzo),
-                        km: Number(newCar.km),
-                        anno: Number(newCar.anno),
                         immagine: compressedImgs[0],
-                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                        userId: user ? user.uid : 'unknown'
-                    });
+                        userId: user ? user.uid : 'unknown',
+                        // Controllo di sicurezza per il timestamp
+                        createdAt: firebase && firebase.firestore ? firebase.firestore.FieldValue.serverTimestamp() : new Date()
+                    };
+
+                    console.log("Invio dati a Firestore...");
+                    await db.current.collection(`artifacts/${appId}/public/data/automobili`).add(carData);
                     
+                    console.log("Salvataggio completato con successo.");
                     setNewCar({ 
                         marca: '', modello: '', prezzo: '', anno: '', km: '', 
                         alimentazione: 'Benzina', categoria: 'Berlina', descrizione: '', immagini: [] 
                     });
+                    alert("Annuncio pubblicato con successo!");
                 } catch (err) {
-                    console.error("Error saving car:", err);
-                    alert("Errore durante il caricamento.");
+                    console.error("Errore dettagliato nel salvataggio:", err);
+                    alert("Errore durante la pubblicazione: " + err.message);
                 } finally {
                     setUploading(false);
                 }
@@ -253,7 +278,7 @@
                     <div className="grid lg:grid-cols-3 gap-10">
                         {/* Form Colonna */}
                         <div className="lg:col-span-1">
-                            <form onSubmit={saveCar} className="bg-slate-800 p-6 rounded-3xl shadow-2xl sticky top-6 border border-white/5">
+                            <div className="bg-slate-800 p-6 rounded-3xl shadow-2xl sticky top-6 border border-white/5">
                                 <h2 className="text-lg font-bold mb-6 flex items-center gap-2 leading-none uppercase italic">
                                     <i data-lucide="plus-square" className="text-red-600 w-5 h-5"></i> 
                                     Nuovo Veicolo
@@ -342,8 +367,10 @@
                                     </div>
                                     
                                     <button 
-                                        disabled={newCar.immagini.length === 0 || uploading} 
-                                        className="w-full bg-red-600 py-4 rounded-xl font-black uppercase shadow-lg hover:bg-red-700 transition disabled:opacity-30 disabled:grayscale flex items-center justify-center gap-2"
+                                        type="button"
+                                        onClick={saveCar}
+                                        disabled={newCar.immagini.length === 0 || uploading || !newCar.marca || !newCar.modello} 
+                                        className="w-full bg-red-600 py-4 rounded-xl font-black uppercase shadow-lg hover:bg-red-700 transition disabled:opacity-30 disabled:grayscale flex items-center justify-center gap-2 mt-4"
                                     >
                                         {uploading ? (
                                             <>
@@ -353,7 +380,7 @@
                                         ) : 'Pubblica Annuncio'}
                                     </button>
                                 </div>
-                            </form>
+                            </div>
                         </div>
 
                         {/* Lista Colonna */}
