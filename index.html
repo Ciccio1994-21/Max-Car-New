@@ -14,7 +14,7 @@
     <!-- Libreria Icone -->
     <script src="https://unpkg.com/lucide@latest"></script>
 
-    <!-- Firebase SDK (Versioni compatibili) -->
+    <!-- Firebase SDK (Versioni compatibili compat) -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
@@ -28,7 +28,6 @@
             background-size: cover;
             background-position: center;
         }
-        /* Preloader style */
         #loader {
             position: fixed;
             top: 0; left: 0; width: 100%; height: 100%;
@@ -39,12 +38,44 @@
 </head>
 <body>
     <div id="loader">
-        <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-red-600"></div>
+        <div class="flex flex-col items-center gap-4">
+            <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-red-600"></div>
+            <p class="text-xs font-bold uppercase tracking-widest text-slate-400">Caricamento Max Car...</p>
+        </div>
     </div>
     <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
+
+        // Gestione globale Firebase per evitare re-inizializzazioni
+        let database = null;
+        let authentication = null;
+
+        const initializeFirebase = () => {
+            if (typeof firebase === 'undefined') return false;
+            
+            try {
+                if (!firebase.apps.length) {
+                    const firebaseConfig = typeof __firebase_config !== 'undefined' 
+                        ? JSON.parse(__firebase_config) 
+                        : null;
+                    
+                    if (firebaseConfig) {
+                        firebase.initializeApp(firebaseConfig);
+                    } else {
+                        console.error("Firebase config missing");
+                        return false;
+                    }
+                }
+                database = firebase.firestore();
+                authentication = firebase.auth();
+                return true;
+            } catch (err) {
+                console.error("Firebase init error:", err);
+                return false;
+            }
+        };
 
         const App = () => {
             const [isReady, setIsReady] = useState(false);
@@ -53,75 +84,57 @@
             const [autoList, setAutoList] = useState([]);
             const [isAdminMode, setIsAdminMode] = useState(false);
             const [filter, setFilter] = useState('Tutte');
-            const dbRef = useRef(null);
-            const authRef = useRef(null);
 
-            // Inizializzazione Ambiente
             useEffect(() => {
-                const initApp = async () => {
-                    try {
-                        // Rimuovi loader visivo
-                        const loader = document.getElementById('loader');
-                        if (loader) loader.style.display = 'none';
-
-                        // Controllo configurazione Firebase
-                        if (typeof __firebase_config === 'undefined') {
-                            console.warn("Configurazione Firebase non trovata, l'app funzionerà in modalità demo locale.");
-                            setIsReady(true);
-                            return;
-                        }
-
-                        const firebaseConfig = JSON.parse(__firebase_config);
-                        const appId = typeof __app_id !== 'undefined' ? __app_id : 'max-car-default';
-                        
-                        if (!firebase.apps.length) {
-                            firebase.initializeApp(firebaseConfig);
-                        }
-                        
-                        dbRef.current = firebase.firestore();
-                        authRef.current = firebase.auth();
-
-                        // Autenticazione
-                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                            await authRef.current.signInWithCustomToken(__initial_auth_token);
-                        } else {
-                            await authRef.current.signInAnonymously();
-                        }
-
-                        authRef.current.onAuthStateChanged(u => {
-                            setUser(u);
-                            if (u) {
-                                // Caricamento dati solo se autenticati
-                                const path = `artifacts/${appId}/public/data/automobili`;
-                                dbRef.current.collection(path).onSnapshot(snapshot => {
-                                    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                                    setAutoList(data);
-                                    renderIcons();
-                                });
+                const startApp = async () => {
+                    // Attendi che le librerie siano caricate
+                    let attempts = 0;
+                    const checkFirebase = setInterval(async () => {
+                        attempts++;
+                        if (initializeFirebase()) {
+                            clearInterval(checkFirebase);
+                            
+                            // Autenticazione
+                            try {
+                                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                                    await authentication.signInWithCustomToken(__initial_auth_token);
+                                } else {
+                                    await authentication.signInAnonymously();
+                                }
+                            } catch (e) {
+                                console.warn("Auth silent fail, continuing...");
                             }
-                        });
 
-                        setIsReady(true);
-                    } catch (err) {
-                        console.error("Errore inizializzazione:", err);
-                        setIsReady(true); // Mostra comunque l'interfaccia
-                    }
+                            authentication.onAuthStateChanged(u => {
+                                setUser(u);
+                                if (u) {
+                                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'max-car-default';
+                                    const path = `artifacts/${appId}/public/data/automobili`;
+                                    database.collection(path).onSnapshot(snapshot => {
+                                        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                                        setAutoList(data);
+                                    });
+                                }
+                            });
+
+                            document.getElementById('loader').style.display = 'none';
+                            setIsReady(true);
+                        } else if (attempts > 50) { // Timeout dopo 5 secondi
+                            clearInterval(checkFirebase);
+                            document.getElementById('loader').innerHTML = "<p class='text-red-600 font-bold'>Errore nel caricamento dei moduli.</p>";
+                        }
+                    }, 100);
                 };
 
-                initApp();
+                startApp();
             }, []);
 
-            const renderIcons = () => {
-                setTimeout(() => {
-                    if (window.lucide) window.lucide.createIcons();
-                }, 100);
-            };
-
             useEffect(() => {
-                renderIcons();
-            }, [currentPage, isAdminMode, filter, isReady]);
+                if (isReady && window.lucide) {
+                    window.lucide.createIcons();
+                }
+            }, [isReady, currentPage, isAdminMode, filter]);
 
-            // Stato per il modulo di inserimento
             const [newCar, setNewCar] = useState({
                 marca: '', modello: '', prezzo: '', anno: '', km: '', 
                 alimentazione: 'Benzina', categoria: 'Berlina', immagine: ''
@@ -138,58 +151,24 @@
 
             const saveCar = async (e) => {
                 e.preventDefault();
-                if (!newCar.immagine) return alert("Inserisci una foto!");
-                
-                try {
-                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'max-car-default';
-                    const path = `artifacts/${appId}/public/data/automobili`;
-                    await dbRef.current.collection(path).add({
-                        ...newCar,
-                        prezzo: Number(newCar.prezzo),
-                        km: Number(newCar.km),
-                        anno: Number(newCar.anno),
-                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                    });
-                    setNewCar({ marca: '', modello: '', prezzo: '', anno: '', km: '', alimentazione: 'Benzina', categoria: 'Berlina', immagine: '' });
-                    setIsAdminMode(false);
-                } catch (err) {
-                    console.error("Salvataggio fallito:", err);
-                }
-            };
-
-            const deleteCar = async (id) => {
-                try {
-                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'max-car-default';
-                    const path = `artifacts/${appId}/public/data/automobili`;
-                    await dbRef.current.collection(path).doc(id).delete();
-                } catch (err) {
-                    console.error("Cancellazione fallita:", err);
-                }
+                if (!newCar.immagine) return;
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'max-car-default';
+                const path = `artifacts/${appId}/public/data/automobili`;
+                await database.collection(path).add({
+                    ...newCar,
+                    prezzo: Number(newCar.prezzo),
+                    km: Number(newCar.km),
+                    anno: Number(newCar.anno),
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                setNewCar({ marca: '', modello: '', prezzo: '', anno: '', km: '', alimentazione: 'Benzina', categoria: 'Berlina', immagine: '' });
+                setIsAdminMode(false);
             };
 
             if (!isReady) return null;
 
-            // COMPONENTI UI
-            const Hero = () => (
-                <div className="hero-bg min-h-[60vh] flex items-center justify-center text-center text-white px-4">
-                    <div className="max-w-3xl">
-                        <h1 className="text-5xl md:text-7xl font-extrabold uppercase italic tracking-tighter mb-6">
-                            Max Car <span className="text-red-600">Tivoli</span>
-                        </h1>
-                        <p className="text-xl md:text-2xl font-light mb-10 text-slate-200">
-                            Usato garantito a Tivoli Terme dal 1995.
-                        </p>
-                        <div className="flex flex-col md:flex-row gap-4 justify-center">
-                            <button onClick={() => setCurrentPage('piazzale')} className="bg-red-600 hover:bg-red-700 px-10 py-4 rounded-xl font-bold uppercase transition shadow-lg">
-                                Vedi Piazzale
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            );
-
             return (
-                <div className="min-h-screen flex flex-col">
+                <div className="min-h-screen flex flex-col bg-slate-50">
                     <nav className="bg-white/90 backdrop-blur-md border-b sticky top-0 z-50 px-6 py-4">
                         <div className="max-w-7xl mx-auto flex justify-between items-center">
                             <div className="flex items-center gap-2 cursor-pointer" onClick={() => setCurrentPage('home')}>
@@ -212,7 +191,7 @@
                     </nav>
 
                     {isAdminMode && (
-                        <div className="bg-slate-900 text-white p-6 md:p-10">
+                        <div className="bg-slate-900 text-white p-6 md:p-10 animate-in slide-in-from-top duration-300">
                             <form onSubmit={saveCar} className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8">
                                 <div className="space-y-4">
                                     <h3 className="text-xl font-bold uppercase text-red-600">Aggiungi Veicolo</h3>
@@ -229,8 +208,8 @@
                                     {newCar.immagine ? (
                                         <img src={newCar.immagine} className="w-full h-full object-cover" />
                                     ) : (
-                                        <label className="cursor-pointer p-10 text-center">
-                                            <i data-lucide="camera" className="w-10 h-10 mx-auto mb-2 opacity-20"></i>
+                                        <label className="cursor-pointer p-10 text-center w-full h-full flex flex-col items-center justify-center">
+                                            <i data-lucide="camera" className="w-10 h-10 mb-2 opacity-20"></i>
                                             <span className="text-[10px] uppercase font-bold opacity-40">Carica Foto</span>
                                             <input type="file" className="hidden" accept="image/*" onChange={handleFile} />
                                         </label>
@@ -241,15 +220,23 @@
                     )}
 
                     <main className="flex-grow">
-                        {currentPage === 'home' && <Hero />}
+                        {currentPage === 'home' && (
+                            <div className="hero-bg min-h-[60vh] flex items-center justify-center text-center text-white px-4">
+                                <div className="max-w-3xl">
+                                    <h1 className="text-5xl md:text-7xl font-extrabold uppercase italic tracking-tighter mb-6">Max Car <span className="text-red-600">Tivoli</span></h1>
+                                    <p className="text-xl md:text-2xl font-light mb-10 text-slate-200">Usato garantito a Tivoli Terme dal 1995.</p>
+                                    <button onClick={() => setCurrentPage('piazzale')} className="bg-red-600 hover:bg-red-700 px-10 py-4 rounded-xl font-bold uppercase transition shadow-lg">Vedi Piazzale</button>
+                                </div>
+                            </div>
+                        )}
                         
                         {(currentPage === 'home' || currentPage === 'piazzale') && (
                             <div className="py-12 px-6 max-w-7xl mx-auto">
-                                <div className="flex justify-between items-end mb-10">
-                                    <h2 className="text-3xl font-black uppercase italic italic">Le nostre <span className="text-red-600">Auto</span></h2>
+                                <div className="flex flex-col md:flex-row justify-between items-center mb-10 gap-4">
+                                    <h2 className="text-3xl font-black uppercase italic">Le nostre <span className="text-red-600">Auto</span></h2>
                                     <div className="flex gap-2">
                                         {['Tutte', 'SUV', 'Berlina'].map(c => (
-                                            <button key={c} onClick={() => setFilter(c)} className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase ${filter === c ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-500'}`}>{c}</button>
+                                            <button key={c} onClick={() => setFilter(c)} className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase ${filter === c ? 'bg-red-600 text-white' : 'bg-white border text-slate-500'}`}>{c}</button>
                                         ))}
                                     </div>
                                 </div>
@@ -266,7 +253,10 @@
                                                 <p className="text-slate-400 text-sm mb-4">{car.anno} • {car.km.toLocaleString()} KM</p>
                                                 <div className="flex gap-2">
                                                     <button className="flex-grow bg-slate-100 py-2 rounded-lg font-bold text-[10px] uppercase">Dettagli</button>
-                                                    {isAdminMode && <button onClick={() => deleteCar(car.id)} className="bg-red-50 text-red-600 p-2 rounded-lg"><i data-lucide="trash-2" className="w-4 h-4"></i></button>}
+                                                    {isAdminMode && <button onClick={async () => {
+                                                        const appId = typeof __app_id !== 'undefined' ? __app_id : 'max-car-default';
+                                                        await database.collection(`artifacts/${appId}/public/data/automobili`).doc(car.id).delete();
+                                                    }} className="bg-red-50 text-red-600 p-2 rounded-lg"><i data-lucide="trash-2" className="w-4 h-4"></i></button>}
                                                 </div>
                                             </div>
                                         </div>
@@ -284,7 +274,7 @@
                         )}
                     </main>
 
-                    <footer className="bg-slate-900 text-white py-12 px-6 text-center text-xs font-bold uppercase tracking-widest opacity-80">
+                    <footer className="bg-slate-900 text-white py-12 px-6 text-center text-xs font-bold uppercase tracking-widest opacity-80 mt-auto">
                         &copy; 2024 Max Car Tivoli Terme • Tutti i diritti riservati
                     </footer>
                 </div>
