@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Max Car Tivoli Terme | Sito Ufficiale</title>
     
-    <!-- Script necessari per far girare React e Firebase nel browser -->
+    <!-- Script necessari per React e Babel -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -33,6 +33,7 @@
             top: 0; left: 0; width: 100%; height: 100%;
             display: flex; justify-content: center; align-items: center;
             background: white; z-index: 1000;
+            transition: opacity 0.5s ease;
         }
     </style>
 </head>
@@ -40,42 +41,13 @@
     <div id="loader">
         <div class="flex flex-col items-center gap-4">
             <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-red-600"></div>
-            <p class="text-xs font-bold uppercase tracking-widest text-slate-400">Caricamento Max Car...</p>
+            <p class="text-xs font-bold uppercase tracking-widest text-slate-400">Configurazione in corso...</p>
         </div>
     </div>
     <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
-
-        // Gestione globale Firebase per evitare re-inizializzazioni
-        let database = null;
-        let authentication = null;
-
-        const initializeFirebase = () => {
-            if (typeof firebase === 'undefined') return false;
-            
-            try {
-                if (!firebase.apps.length) {
-                    const firebaseConfig = typeof __firebase_config !== 'undefined' 
-                        ? JSON.parse(__firebase_config) 
-                        : null;
-                    
-                    if (firebaseConfig) {
-                        firebase.initializeApp(firebaseConfig);
-                    } else {
-                        console.error("Firebase config missing");
-                        return false;
-                    }
-                }
-                database = firebase.firestore();
-                authentication = firebase.auth();
-                return true;
-            } catch (err) {
-                console.error("Firebase init error:", err);
-                return false;
-            }
-        };
 
         const App = () => {
             const [isReady, setIsReady] = useState(false);
@@ -84,56 +56,87 @@
             const [autoList, setAutoList] = useState([]);
             const [isAdminMode, setIsAdminMode] = useState(false);
             const [filter, setFilter] = useState('Tutte');
+            
+            const db = useRef(null);
+            const auth = useRef(null);
 
             useEffect(() => {
-                const startApp = async () => {
-                    // Attendi che le librerie siano caricate
-                    let attempts = 0;
-                    const checkFirebase = setInterval(async () => {
-                        attempts++;
-                        if (initializeFirebase()) {
-                            clearInterval(checkFirebase);
+                const initFirebaseAndApp = async () => {
+                    // Funzione per attendere che l'oggetto firebase sia disponibile globalmente
+                    const waitForFirebase = () => {
+                        return new Promise((resolve) => {
+                            const interval = setInterval(() => {
+                                if (typeof firebase !== 'undefined' && firebase.apps) {
+                                    clearInterval(interval);
+                                    resolve();
+                                }
+                            }, 100);
+                        });
+                    };
+
+                    await waitForFirebase();
+
+                    try {
+                        // Inizializzazione Firebase
+                        if (!firebase.apps.length) {
+                            const firebaseConfig = typeof __firebase_config !== 'undefined' 
+                                ? JSON.parse(__firebase_config) 
+                                : null;
                             
-                            // Autenticazione
-                            try {
-                                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                                    await authentication.signInWithCustomToken(__initial_auth_token);
-                                } else {
-                                    await authentication.signInAnonymously();
-                                }
-                            } catch (e) {
-                                console.warn("Auth silent fail, continuing...");
+                            if (firebaseConfig) {
+                                firebase.initializeApp(firebaseConfig);
                             }
-
-                            authentication.onAuthStateChanged(u => {
-                                setUser(u);
-                                if (u) {
-                                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'max-car-default';
-                                    const path = `artifacts/${appId}/public/data/automobili`;
-                                    database.collection(path).onSnapshot(snapshot => {
-                                        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                                        setAutoList(data);
-                                    });
-                                }
-                            });
-
-                            document.getElementById('loader').style.display = 'none';
-                            setIsReady(true);
-                        } else if (attempts > 50) { // Timeout dopo 5 secondi
-                            clearInterval(checkFirebase);
-                            document.getElementById('loader').innerHTML = "<p class='text-red-600 font-bold'>Errore nel caricamento dei moduli.</p>";
                         }
-                    }, 100);
+
+                        db.current = firebase.firestore();
+                        auth.current = firebase.auth();
+
+                        // Autenticazione
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await auth.current.signInWithCustomToken(__initial_auth_token).catch(() => auth.current.signInAnonymously());
+                        } else {
+                            await auth.current.signInAnonymously();
+                        }
+
+                        auth.current.onAuthStateChanged(u => {
+                            setUser(u);
+                            if (u) {
+                                const appId = typeof __app_id !== 'undefined' ? __app_id : 'max-car-tivoli';
+                                const path = `artifacts/${appId}/public/data/automobili`;
+                                
+                                db.current.collection(path).onSnapshot(snapshot => {
+                                    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                                    setAutoList(data);
+                                    if (window.lucide) window.lucide.createIcons();
+                                }, (err) => console.error("Firestore Error:", err));
+                            }
+                        });
+
+                        // Nascondi loader e mostra app
+                        setTimeout(() => {
+                            const loader = document.getElementById('loader');
+                            if (loader) loader.style.display = 'none';
+                            setIsReady(true);
+                        }, 500);
+
+                    } catch (error) {
+                        console.error("Initialization Error:", error);
+                        // Fallback: mostra l'app anche se firebase fallisce per debug visivo
+                        setIsReady(true);
+                        const loader = document.getElementById('loader');
+                        if (loader) loader.style.display = 'none';
+                    }
                 };
 
-                startApp();
+                initFirebaseAndApp();
             }, []);
 
+            // Re-render delle icone Lucide ad ogni cambio pagina o stato
             useEffect(() => {
                 if (isReady && window.lucide) {
                     window.lucide.createIcons();
                 }
-            }, [isReady, currentPage, isAdminMode, filter]);
+            }, [isReady, currentPage, isAdminMode, filter, autoList]);
 
             const [newCar, setNewCar] = useState({
                 marca: '', modello: '', prezzo: '', anno: '', km: '', 
@@ -151,16 +154,18 @@
 
             const saveCar = async (e) => {
                 e.preventDefault();
-                if (!newCar.immagine) return;
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'max-car-default';
+                if (!newCar.immagine || !db.current) return;
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'max-car-tivoli';
                 const path = `artifacts/${appId}/public/data/automobili`;
-                await database.collection(path).add({
+                
+                await db.current.collection(path).add({
                     ...newCar,
                     prezzo: Number(newCar.prezzo),
                     km: Number(newCar.km),
                     anno: Number(newCar.anno),
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
+                
                 setNewCar({ marca: '', modello: '', prezzo: '', anno: '', km: '', alimentazione: 'Benzina', categoria: 'Berlina', immagine: '' });
                 setIsAdminMode(false);
             };
@@ -169,7 +174,7 @@
 
             return (
                 <div className="min-h-screen flex flex-col bg-slate-50">
-                    <nav className="bg-white/90 backdrop-blur-md border-b sticky top-0 z-50 px-6 py-4">
+                    <nav className="bg-white/95 backdrop-blur-md border-b sticky top-0 z-50 px-6 py-4 shadow-sm">
                         <div className="max-w-7xl mx-auto flex justify-between items-center">
                             <div className="flex items-center gap-2 cursor-pointer" onClick={() => setCurrentPage('home')}>
                                 <div className="bg-red-600 p-2 rounded-lg text-white">
@@ -179,38 +184,40 @@
                             </div>
                             
                             <div className="hidden md:flex gap-8 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                                <button onClick={() => setCurrentPage('home')} className={currentPage === 'home' ? 'text-red-600' : ''}>Home</button>
-                                <button onClick={() => setCurrentPage('piazzale')} className={currentPage === 'piazzale' ? 'text-red-600' : ''}>Piazzale</button>
-                                <button onClick={() => setCurrentPage('chi-siamo')} className={currentPage === 'chi-siamo' ? 'text-red-600' : ''}>Chi Siamo</button>
+                                <button onClick={() => setCurrentPage('home')} className={`hover:text-red-600 transition ${currentPage === 'home' ? 'text-red-600' : ''}`}>Home</button>
+                                <button onClick={() => setCurrentPage('piazzale')} className={`hover:text-red-600 transition ${currentPage === 'piazzale' ? 'text-red-600' : ''}`}>Piazzale</button>
+                                <button onClick={() => setCurrentPage('chi-siamo')} className={`hover:text-red-600 transition ${currentPage === 'chi-siamo' ? 'text-red-600' : ''}`}>Chi Siamo</button>
                             </div>
 
-                            <button onClick={() => setIsAdminMode(!isAdminMode)} className="bg-slate-900 text-white px-4 py-2 rounded-lg text-[10px] uppercase font-bold">
-                                {isAdminMode ? 'Esci' : 'Gestore'}
+                            <button onClick={() => setIsAdminMode(!isAdminMode)} className="bg-slate-900 text-white px-4 py-2 rounded-lg text-[10px] uppercase font-bold hover:bg-slate-800 transition">
+                                {isAdminMode ? 'Chiudi Pannello' : 'Area Gestore'}
                             </button>
                         </div>
                     </nav>
 
                     {isAdminMode && (
-                        <div className="bg-slate-900 text-white p-6 md:p-10 animate-in slide-in-from-top duration-300">
+                        <div className="bg-slate-900 text-white p-6 md:p-10 animate-in fade-in zoom-in duration-300">
                             <form onSubmit={saveCar} className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8">
                                 <div className="space-y-4">
-                                    <h3 className="text-xl font-bold uppercase text-red-600">Aggiungi Veicolo</h3>
-                                    <input required placeholder="Marca" className="w-full bg-white/10 p-3 rounded-lg outline-none" value={newCar.marca} onChange={e => setNewCar({...newCar, marca: e.target.value})} />
-                                    <input required placeholder="Modello" className="w-full bg-white/10 p-3 rounded-lg outline-none" value={newCar.modello} onChange={e => setNewCar({...newCar, modello: e.target.value})} />
+                                    <h3 className="text-xl font-bold uppercase text-red-600 flex items-center gap-2">
+                                        <i data-lucide="plus-circle" className="w-5 h-5"></i> Nuovo Annuncio
+                                    </h3>
+                                    <input required placeholder="Marca (es. Fiat)" className="w-full bg-white/10 p-3 rounded-lg outline-none focus:ring-2 ring-red-600 transition" value={newCar.marca} onChange={e => setNewCar({...newCar, marca: e.target.value})} />
+                                    <input required placeholder="Modello" className="w-full bg-white/10 p-3 rounded-lg outline-none focus:ring-2 ring-red-600 transition" value={newCar.modello} onChange={e => setNewCar({...newCar, modello: e.target.value})} />
                                     <div className="grid grid-cols-3 gap-2">
-                                        <input required type="number" placeholder="Prezzo" className="bg-white/10 p-3 rounded-lg outline-none" value={newCar.prezzo} onChange={e => setNewCar({...newCar, prezzo: e.target.value})} />
-                                        <input required type="number" placeholder="Anno" className="bg-white/10 p-3 rounded-lg outline-none" value={newCar.anno} onChange={e => setNewCar({...newCar, anno: e.target.value})} />
-                                        <input required type="number" placeholder="KM" className="bg-white/10 p-3 rounded-lg outline-none" value={newCar.km} onChange={e => setNewCar({...newCar, km: e.target.value})} />
+                                        <input required type="number" placeholder="Prezzo (€)" className="bg-white/10 p-3 rounded-lg outline-none focus:ring-2 ring-red-600 transition" value={newCar.prezzo} onChange={e => setNewCar({...newCar, prezzo: e.target.value})} />
+                                        <input required type="number" placeholder="Anno" className="bg-white/10 p-3 rounded-lg outline-none focus:ring-2 ring-red-600 transition" value={newCar.anno} onChange={e => setNewCar({...newCar, anno: e.target.value})} />
+                                        <input required type="number" placeholder="KM" className="bg-white/10 p-3 rounded-lg outline-none focus:ring-2 ring-red-600 transition" value={newCar.km} onChange={e => setNewCar({...newCar, km: e.target.value})} />
                                     </div>
-                                    <button className="w-full bg-red-600 py-3 rounded-lg font-bold uppercase">Salva Annuncio</button>
+                                    <button className="w-full bg-red-600 py-4 rounded-lg font-bold uppercase hover:bg-red-700 transition shadow-lg">Pubblica Ora</button>
                                 </div>
-                                <div className="border-2 border-dashed border-white/20 rounded-2xl flex items-center justify-center bg-white/5 overflow-hidden">
+                                <div className="border-2 border-dashed border-white/20 rounded-2xl flex items-center justify-center bg-white/5 overflow-hidden relative group">
                                     {newCar.immagine ? (
                                         <img src={newCar.immagine} className="w-full h-full object-cover" />
                                     ) : (
-                                        <label className="cursor-pointer p-10 text-center w-full h-full flex flex-col items-center justify-center">
-                                            <i data-lucide="camera" className="w-10 h-10 mb-2 opacity-20"></i>
-                                            <span className="text-[10px] uppercase font-bold opacity-40">Carica Foto</span>
+                                        <label className="cursor-pointer p-10 text-center w-full h-full flex flex-col items-center justify-center hover:bg-white/10 transition">
+                                            <i data-lucide="camera" className="w-12 h-12 mb-3 opacity-20"></i>
+                                            <span className="text-[10px] uppercase font-bold opacity-40">Carica Foto Veicolo</span>
                                             <input type="file" className="hidden" accept="image/*" onChange={handleFile} />
                                         </label>
                                     )}
@@ -221,61 +228,116 @@
 
                     <main className="flex-grow">
                         {currentPage === 'home' && (
-                            <div className="hero-bg min-h-[60vh] flex items-center justify-center text-center text-white px-4">
-                                <div className="max-w-3xl">
-                                    <h1 className="text-5xl md:text-7xl font-extrabold uppercase italic tracking-tighter mb-6">Max Car <span className="text-red-600">Tivoli</span></h1>
-                                    <p className="text-xl md:text-2xl font-light mb-10 text-slate-200">Usato garantito a Tivoli Terme dal 1995.</p>
-                                    <button onClick={() => setCurrentPage('piazzale')} className="bg-red-600 hover:bg-red-700 px-10 py-4 rounded-xl font-bold uppercase transition shadow-lg">Vedi Piazzale</button>
+                            <div className="hero-bg min-h-[70vh] flex items-center justify-center text-center text-white px-4">
+                                <div className="max-w-3xl animate-in fade-in slide-in-from-bottom-10 duration-1000">
+                                    <h1 className="text-6xl md:text-8xl font-extrabold uppercase italic tracking-tighter mb-6">Max Car <span className="text-red-600">Tivoli</span></h1>
+                                    <p className="text-xl md:text-2xl font-light mb-10 text-slate-200">Qualità e trasparenza nel cuore di Tivoli Terme dal 1995.</p>
+                                    <button onClick={() => setCurrentPage('piazzale')} className="bg-red-600 hover:bg-red-700 px-12 py-5 rounded-xl font-bold uppercase transition shadow-2xl hover:scale-105 transform">Esplora il Piazzale</button>
                                 </div>
                             </div>
                         )}
                         
                         {(currentPage === 'home' || currentPage === 'piazzale') && (
-                            <div className="py-12 px-6 max-w-7xl mx-auto">
-                                <div className="flex flex-col md:flex-row justify-between items-center mb-10 gap-4">
-                                    <h2 className="text-3xl font-black uppercase italic">Le nostre <span className="text-red-600">Auto</span></h2>
-                                    <div className="flex gap-2">
+                            <div className="py-16 px-6 max-w-7xl mx-auto">
+                                <div className="flex flex-col md:flex-row justify-between items-center mb-12 gap-6 border-b pb-8">
+                                    <h2 className="text-4xl font-black uppercase italic tracking-tight">Vetrina <span className="text-red-600 underline">Occasioni</span></h2>
+                                    <div className="flex gap-2 bg-white p-1 rounded-full shadow-sm border">
                                         {['Tutte', 'SUV', 'Berlina'].map(c => (
-                                            <button key={c} onClick={() => setFilter(c)} className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase ${filter === c ? 'bg-red-600 text-white' : 'bg-white border text-slate-500'}`}>{c}</button>
+                                            <button key={c} onClick={() => setFilter(c)} className={`px-6 py-2 rounded-full text-[10px] font-bold uppercase transition ${filter === c ? 'bg-red-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>{c}</button>
                                         ))}
                                     </div>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
                                     {autoList.filter(a => filter === 'Tutte' || a.categoria === filter).map(car => (
-                                        <div key={car.id} className="bg-white rounded-3xl overflow-hidden shadow-sm border group">
-                                            <div className="h-56 overflow-hidden relative">
-                                                <img src={car.immagine} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
-                                                <div className="absolute bottom-3 right-3 bg-slate-900 text-white px-3 py-1 rounded-lg font-bold">€{car.prezzo.toLocaleString()}</div>
+                                        <div key={car.id} className="bg-white rounded-[2rem] overflow-hidden shadow-xl hover:shadow-2xl transition duration-500 border border-slate-100 group">
+                                            <div className="h-64 overflow-hidden relative">
+                                                <img src={car.immagine} className="w-full h-full object-cover group-hover:scale-110 transition duration-700" alt={car.modello} />
+                                                <div className="absolute top-4 left-4 bg-white/90 backdrop-blur px-3 py-1 rounded-full text-[10px] font-black text-slate-900 shadow-sm uppercase tracking-widest">{car.categoria}</div>
+                                                <div className="absolute bottom-4 right-4 bg-red-600 text-white px-4 py-2 rounded-2xl font-black text-xl shadow-lg">€{car.prezzo.toLocaleString()}</div>
                                             </div>
-                                            <div className="p-5">
-                                                <h3 className="font-bold uppercase text-lg">{car.marca} {car.modello}</h3>
-                                                <p className="text-slate-400 text-sm mb-4">{car.anno} • {car.km.toLocaleString()} KM</p>
-                                                <div className="flex gap-2">
-                                                    <button className="flex-grow bg-slate-100 py-2 rounded-lg font-bold text-[10px] uppercase">Dettagli</button>
-                                                    {isAdminMode && <button onClick={async () => {
-                                                        const appId = typeof __app_id !== 'undefined' ? __app_id : 'max-car-default';
-                                                        await database.collection(`artifacts/${appId}/public/data/automobili`).doc(car.id).delete();
-                                                    }} className="bg-red-50 text-red-600 p-2 rounded-lg"><i data-lucide="trash-2" className="w-4 h-4"></i></button>}
+                                            <div className="p-8">
+                                                <h3 className="font-black uppercase text-2xl mb-1 tracking-tighter text-slate-900 leading-none">{car.marca}</h3>
+                                                <p className="text-red-600 font-bold uppercase text-sm mb-4">{car.modello}</p>
+                                                
+                                                <div className="flex items-center gap-4 text-slate-400 text-[10px] font-bold uppercase border-t pt-4">
+                                                    <span className="flex items-center gap-1"><i data-lucide="calendar" className="w-3 h-3"></i> {car.anno}</span>
+                                                    <span className="flex items-center gap-1"><i data-lucide="gauge" className="w-3 h-3"></i> {car.km.toLocaleString()} KM</span>
+                                                    <span className="flex items-center gap-1"><i data-lucide="fuel" className="w-3 h-3"></i> {car.alimentazione}</span>
+                                                </div>
+
+                                                <div className="mt-8 flex gap-3">
+                                                    <button className="flex-grow bg-slate-900 text-white py-4 rounded-xl font-bold text-[11px] uppercase tracking-widest hover:bg-red-600 transition duration-300">Dettagli Tecnici</button>
+                                                    {isAdminMode && (
+                                                        <button onClick={async () => {
+                                                            const appId = typeof __app_id !== 'undefined' ? __app_id : 'max-car-tivoli';
+                                                            await db.current.collection(`artifacts/${appId}/public/data/automobili`).doc(car.id).delete();
+                                                        }} className="bg-red-50 text-red-600 p-4 rounded-xl hover:bg-red-100 transition shadow-inner">
+                                                            <i data-lucide="trash-2" className="w-5 h-5"></i>
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
                                     ))}
-                                    {autoList.length === 0 && <p className="col-span-full text-center py-20 text-slate-300 uppercase font-bold tracking-widest text-sm italic">Nessun veicolo caricato</p>}
+                                    {autoList.length === 0 && (
+                                        <div className="col-span-full flex flex-col items-center py-32 text-slate-300">
+                                            <i data-lucide="car" className="w-16 h-16 opacity-20 mb-4"></i>
+                                            <p className="uppercase font-black tracking-[0.2em] italic text-lg">Piazzale in aggiornamento...</p>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}
 
                         {currentPage === 'chi-siamo' && (
-                            <div className="py-20 px-6 max-w-4xl mx-auto text-center">
-                                <h2 className="text-4xl font-black uppercase italic mb-8">Oltre 25 anni di <span className="text-red-600">Storia</span></h2>
-                                <p className="text-lg text-slate-600 leading-relaxed">Siamo nati con l'obiettivo di rendere l'acquisto dell'auto un momento sereno e professionale. Ogni veicolo nel nostro piazzale a Tivoli Terme è stato personalmente selezionato e verificato.</p>
+                            <div className="py-24 px-6 max-w-5xl mx-auto text-center animate-in fade-in slide-in-from-bottom-5 duration-700">
+                                <span className="text-red-600 font-bold uppercase tracking-widest text-xs mb-4 block">Tradizione e Passione</span>
+                                <h2 className="text-5xl md:text-7xl font-black uppercase italic mb-10 leading-tight">La nostra <span className="text-red-600 underline">Eredità</span></h2>
+                                <div className="grid md:grid-cols-2 gap-12 text-left items-center">
+                                    <div className="space-y-6 text-lg text-slate-600 leading-relaxed">
+                                        <p>Max Car non è solo una concessionaria, è un punto di riferimento per chi cerca serietà nel mondo dell'usato. Fondata nel 1995, la nostra azienda ha visto passare generazioni di automobilisti.</p>
+                                        <p>Ogni veicolo che entra nel nostro stock viene sottoposto a 110 controlli tecnici certificati per garantire sicurezza e tranquillità a chi lo guiderà.</p>
+                                        <div className="flex gap-4 pt-4">
+                                            <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+                                                <p className="text-red-600 font-black text-3xl">29+</p>
+                                                <p className="text-[10px] font-bold uppercase text-slate-400">Anni di attività</p>
+                                            </div>
+                                            <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+                                                <p className="text-red-600 font-black text-3xl">5k+</p>
+                                                <p className="text-[10px] font-bold uppercase text-slate-400">Clienti soddisfatti</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="rounded-[3rem] overflow-hidden shadow-2xl rotate-2">
+                                        <img src="https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&q=80&w=800" alt="Showroom" className="w-full h-full object-cover" />
+                                    </div>
+                                </div>
                             </div>
                         )}
                     </main>
 
-                    <footer className="bg-slate-900 text-white py-12 px-6 text-center text-xs font-bold uppercase tracking-widest opacity-80 mt-auto">
-                        &copy; 2024 Max Car Tivoli Terme • Tutti i diritti riservati
+                    <footer className="bg-slate-950 text-white py-16 px-6 mt-auto">
+                        <div className="max-w-7xl mx-auto grid md:grid-cols-3 gap-12 border-b border-white/10 pb-12 mb-8">
+                            <div>
+                                <h4 className="font-black uppercase italic text-2xl mb-4">Max Car <span className="text-red-600">Tivoli</span></h4>
+                                <p className="text-slate-400 text-sm leading-relaxed">Via Nazionale Tiburtina, km 22.500<br/>00011 Tivoli Terme (RM)</p>
+                            </div>
+                            <div>
+                                <h5 className="font-bold uppercase text-xs tracking-widest text-red-600 mb-4">Contatti</h5>
+                                <p className="text-slate-400 text-sm">Tel: +39 06 1234567<br/>Email: info@maxcar-tivoli.it</p>
+                            </div>
+                            <div>
+                                <h5 className="font-bold uppercase text-xs tracking-widest text-red-600 mb-4">Social</h5>
+                                <div className="flex gap-4 text-slate-400">
+                                    <i data-lucide="facebook" className="w-5 h-5 hover:text-white cursor-pointer"></i>
+                                    <i data-lucide="instagram" className="w-5 h-5 hover:text-white cursor-pointer"></i>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="max-w-7xl mx-auto text-center text-[10px] font-bold uppercase tracking-widest opacity-40">
+                            &copy; 2024 Max Car Tivoli Terme • Partita IVA 01234567890
+                        </div>
                     </footer>
                 </div>
             );
