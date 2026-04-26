@@ -25,6 +25,7 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
+        // Configurazione Firebase condivisa
         const myFirebaseConfig = {
             apiKey: "AIzaSyCB5yV6u4DtzUFb0jADUJobh8In52JNzp4",
             authDomain: "maxcar-7416d.firebaseapp.com",
@@ -39,6 +40,9 @@
         const db = firebase.firestore();
         const auth = firebase.auth();
         const appId = "max-car-tivoli"; 
+        
+        // Questo percorso DEVE essere identico in index.html e gestionale.html
+        const COLLECTION_PATH = `artifacts/${appId}/public/data/automobili`;
 
         const App = () => {
             const [autoList, setAutoList] = useState([]);
@@ -54,26 +58,35 @@
             useEffect(() => {
                 const init = async () => {
                     try {
-                        // Cruciale: attendere l'autenticazione anonima
+                        // Accesso anonimo per permessi Firestore
                         await auth.signInAnonymously();
                         
-                        const collectionPath = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('automobili');
-                        
-                        const unsubscribe = collectionPath.onSnapshot(snapshot => {
-                            const items = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                            setAutoList(items);
-                            setLoading(false);
-                            setDbError(null);
-                        }, err => {
-                            console.error("Errore Firestore:", err.code, err.message);
-                            setDbError(err.message);
-                            setLoading(false);
-                        });
+                        // Sincronizzazione in tempo reale
+                        const unsubscribe = db.collection(COLLECTION_PATH)
+                            .orderBy('createdAt', 'desc')
+                            .onSnapshot(snapshot => {
+                                const items = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                                setAutoList(items);
+                                setLoading(false);
+                                setDbError(null);
+                            }, err => {
+                                console.error("Errore Firestore:", err);
+                                if (err.code === 'failed-precondition') {
+                                    // Fallback se l'indice non è ancora pronto
+                                    db.collection(COLLECTION_PATH).onSnapshot(s => {
+                                        const items = s.docs.map(d => ({ id: d.id, ...d.data() }));
+                                        setAutoList(items);
+                                        setLoading(false);
+                                    });
+                                } else {
+                                    setDbError(err.message);
+                                    setLoading(false);
+                                }
+                            });
                         
                         return () => unsubscribe();
                     } catch (e) {
-                        console.error("Errore Auth:", e);
-                        setDbError("Errore di autenticazione");
+                        setDbError("Errore di connessione");
                         setLoading(false);
                     }
                 };
@@ -85,10 +98,6 @@
             const handleFile = (e) => {
                 const files = Array.from(e.target.files);
                 files.forEach(file => {
-                    if (file.size > 1000000) { // Limite 1MB per performance
-                        alert("L'immagine è troppo grande. Usa foto sotto 1MB.");
-                        return;
-                    }
                     const reader = new FileReader();
                     reader.onloadend = () => {
                         setNewCar(prev => ({ ...prev, immagini: [...prev.immagini, reader.result].slice(0, 5) }));
@@ -100,12 +109,11 @@
             const saveCar = async (e) => {
                 e.preventDefault();
                 if (uploading || dbError) return;
-                if (newCar.immagini.length === 0) { alert("Aggiungi almeno una foto!"); return; }
+                if (newCar.immagini.length === 0) { alert("Inserisci almeno una foto"); return; }
                 
                 setUploading(true);
                 try {
-                    const collectionPath = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('automobili');
-                    await collectionPath.add({
+                    await db.collection(COLLECTION_PATH).add({
                         marca: newCar.marca.trim(),
                         modello: newCar.modello.trim(),
                         prezzo: Number(newCar.prezzo),
@@ -113,189 +121,99 @@
                         km: Number(newCar.km),
                         alimentazione: newCar.alimentazione,
                         categoria: newCar.categoria,
-                        immagine: newCar.immagini[0],
-                        immagini: newCar.immagini,
+                        immagine: newCar.immagini[0], // Foto principale
+                        immagini: newCar.immagini,    // Gallery
                         createdAt: firebase.firestore.FieldValue.serverTimestamp()
                     });
                     
                     setNewCar({ marca: '', modello: '', prezzo: '', anno: '', km: '', alimentazione: 'Benzina', categoria: 'Berlina', immagini: [] });
-                    alert("✅ Veicolo pubblicato con successo!");
+                    alert("✅ Veicolo salvato e visibile sul sito!");
                 } catch (err) {
-                    console.error("Errore Salvataggio:", err);
-                    if (err.message.includes("permission-denied")) {
-                        alert("Errore: Permessi negati. Assicurati di aver impostato le Regole su 'Modalità Test' su Firebase.");
-                    } else {
-                        alert("Errore durante il salvataggio. Riprova tra un istante.");
-                    }
+                    alert("Errore nel salvataggio. Controlla la console.");
                 } finally { setUploading(false); }
             };
 
             if (loading) return (
                 <div className="h-screen flex flex-col items-center justify-center bg-slate-950">
                     <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-red-600 mb-4"></div>
-                    <p className="text-slate-500 text-[10px] uppercase font-bold tracking-widest text-center px-4">Sincronizzazione con il database Max Car...</p>
+                    <p className="text-slate-500 text-[10px] uppercase font-bold tracking-widest italic">Connessione Max Car Database...</p>
                 </div>
             );
 
             return (
                 <div className="p-4 md:p-8 max-w-7xl mx-auto min-h-screen">
-                    {dbError && (
-                        <div className="mb-8 bg-red-600/10 border border-red-600/20 p-6 rounded-[2rem] flex flex-col items-center text-center">
-                            <div className="bg-red-600 p-3 rounded-xl mb-3 shadow-lg shadow-red-600/20">
-                                <i data-lucide="shield-alert" className="text-white w-6 h-6"></i>
-                            </div>
-                            <h2 className="text-lg font-black uppercase italic">Accesso al Database Limitato</h2>
-                            <p className="text-slate-400 text-xs mt-1 mb-4 max-w-md">
-                                Sembra che le regole di sicurezza di Firebase stiano bloccando l'invio dei dati. 
-                                Vai nella scheda "Regole" di Firestore e assicurati che siano impostate per consentire la scrittura.
-                            </p>
-                            <a href="https://console.firebase.google.com/project/maxcar-7416d/firestore/rules" target="_blank" className="bg-white text-black text-[10px] font-black uppercase px-6 py-3 rounded-xl hover:bg-slate-200 transition">Controlla Regole</a>
-                        </div>
-                    )}
-
                     <header className="flex flex-col md:flex-row justify-between items-center mb-10 pb-6 border-b border-white/5 gap-4">
                         <div className="flex items-center gap-3">
-                            <div className="bg-red-600 p-2 rounded-lg">
+                            <div className="bg-red-600 p-2 rounded-lg shadow-lg shadow-red-600/20">
                                 <i data-lucide="layout-dashboard" className="text-white w-5 h-5"></i>
                             </div>
-                            <h1 className="text-2xl font-black italic uppercase tracking-tighter text-white">MAX CAR <span className="text-red-600">PANEL</span></h1>
-                        </div>
-                        <div className={`flex items-center gap-2 px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-widest border ${dbError ? 'border-red-600/50 text-red-500' : 'border-green-600/50 text-green-500 bg-green-500/5'}`}>
-                            <span className={`w-2 h-2 rounded-full animate-pulse ${dbError ? 'bg-red-500' : 'bg-green-500'}`}></span>
-                            {dbError ? 'Connessione Fallita' : 'Connesso & Operativo'}
+                            <h1 className="text-2xl font-black italic uppercase tracking-tighter text-white">MAX CAR <span className="text-red-600">GESTIONALE</span></h1>
                         </div>
                     </header>
 
                     <div className="grid lg:grid-cols-12 gap-8">
-                        {/* Form */}
                         <div className="lg:col-span-4">
                             <form onSubmit={saveCar} className="bg-slate-900/50 p-6 rounded-[2.5rem] border border-white/5 shadow-2xl sticky top-8">
-                                <h3 className="text-[11px] font-black uppercase italic flex items-center gap-2 mb-8 text-slate-400 tracking-widest">
-                                    <span className="w-1 h-4 bg-red-600 rounded-full"></span>
-                                    Nuovo Inserimento
-                                </h3>
-                                
+                                <h3 className="text-[11px] font-black uppercase italic flex items-center gap-2 mb-8 text-slate-400 tracking-widest">Nuovo Inserimento</h3>
                                 <div className="space-y-4">
-                                    <div className="space-y-1">
-                                        <label className="text-[9px] font-bold text-slate-500 uppercase ml-2">Marca e Modello</label>
-                                        <input required placeholder="es. Fiat" className="w-full bg-slate-950 border border-slate-800 p-4 rounded-2xl text-sm outline-none focus:border-red-600 transition" value={newCar.marca} onChange={e => setNewCar({...newCar, marca: e.target.value})} />
-                                        <input required placeholder="es. 500L" className="w-full bg-slate-950 border border-slate-800 p-4 rounded-2xl text-sm outline-none focus:border-red-600 transition" value={newCar.modello} onChange={e => setNewCar({...newCar, modello: e.target.value})} />
-                                    </div>
-                                    
+                                    <input required placeholder="Marca" className="w-full bg-slate-950 border border-slate-800 p-4 rounded-2xl text-sm outline-none focus:border-red-600 transition" value={newCar.marca} onChange={e => setNewCar({...newCar, marca: e.target.value})} />
+                                    <input required placeholder="Modello" className="w-full bg-slate-950 border border-slate-800 p-4 rounded-2xl text-sm outline-none focus:border-red-600 transition" value={newCar.modello} onChange={e => setNewCar({...newCar, modello: e.target.value})} />
                                     <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-1">
-                                            <label className="text-[9px] font-bold text-slate-500 uppercase ml-2">Prezzo (€)</label>
-                                            <input required type="number" placeholder="15000" className="w-full bg-slate-950 border border-slate-800 p-4 rounded-2xl text-sm" value={newCar.prezzo} onChange={e => setNewCar({...newCar, prezzo: e.target.value})} />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[9px] font-bold text-slate-500 uppercase ml-2">Chilometri</label>
-                                            <input required type="number" placeholder="45000" className="w-full bg-slate-950 border border-slate-800 p-4 rounded-2xl text-sm" value={newCar.km} onChange={e => setNewCar({...newCar, km: e.target.value})} />
-                                        </div>
+                                        <input required type="number" placeholder="Prezzo €" className="w-full bg-slate-950 border border-slate-800 p-4 rounded-2xl text-sm outline-none focus:border-red-600 transition" value={newCar.prezzo} onChange={e => setNewCar({...newCar, prezzo: e.target.value})} />
+                                        <input required type="number" placeholder="Km" className="w-full bg-slate-950 border border-slate-800 p-4 rounded-2xl text-sm outline-none focus:border-red-600 transition" value={newCar.km} onChange={e => setNewCar({...newCar, km: e.target.value})} />
                                     </div>
-
                                     <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-1">
-                                            <label className="text-[9px] font-bold text-slate-500 uppercase ml-2">Anno</label>
-                                            <input required type="number" placeholder="2020" className="w-full bg-slate-950 border border-slate-800 p-4 rounded-2xl text-sm" value={newCar.anno} onChange={e => setNewCar({...newCar, anno: e.target.value})} />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[9px] font-bold text-slate-500 uppercase ml-2">Alimentazione</label>
-                                            <select className="w-full bg-slate-950 border border-slate-800 p-4 rounded-2xl text-sm text-slate-400" value={newCar.alimentazione} onChange={e => setNewCar({...newCar, alimentazione: e.target.value})}>
-                                                <option>Benzina</option><option>Diesel</option><option>Ibrida</option><option>Elettrica</option><option>GPL</option>
-                                            </select>
-                                        </div>
+                                        <input required type="number" placeholder="Anno" className="w-full bg-slate-950 border border-slate-800 p-4 rounded-2xl text-sm outline-none focus:border-red-600 transition" value={newCar.anno} onChange={e => setNewCar({...newCar, anno: e.target.value})} />
+                                        <select className="w-full bg-slate-950 border border-slate-800 p-4 rounded-2xl text-sm text-slate-400 outline-none focus:border-red-600" value={newCar.alimentazione} onChange={e => setNewCar({...newCar, alimentazione: e.target.value})}>
+                                            <option>Benzina</option><option>Diesel</option><option>Ibrida</option><option>Elettrica</option><option>GPL</option>
+                                        </select>
                                     </div>
-
-                                    <div className="bg-slate-950 border-2 border-dashed border-slate-800 p-6 rounded-2xl text-center group hover:border-red-600/50 transition-colors">
+                                    <div className="bg-slate-950 border-2 border-dashed border-slate-800 p-6 rounded-2xl text-center">
                                         <label className="cursor-pointer">
-                                            <div className="bg-red-600/10 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition">
-                                                <i data-lucide="camera" className="text-red-600 w-6 h-6"></i>
-                                            </div>
-                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sfoglia Immagini</p>
+                                            <i data-lucide="camera" className="text-red-600 w-8 h-8 mx-auto mb-2"></i>
+                                            <p className="text-[10px] font-black text-slate-400 uppercase">Aggiungi Foto</p>
                                             <input type="file" className="hidden" accept="image/*" multiple onChange={handleFile} />
                                         </label>
                                         <div className="flex gap-2 mt-4 overflow-x-auto hide-scrollbar">
                                             {newCar.immagini.map((img, i) => (
-                                                <div key={i} className="relative group/img">
-                                                    <img src={img} className="w-12 h-12 object-cover rounded-lg border border-white/10" />
-                                                    <button type="button" onClick={() => setNewCar(p => ({...p, immagini: p.immagini.filter((_, idx) => idx !== i)}))} className="absolute -top-1 -right-1 bg-red-600 rounded-full p-0.5 opacity-0 group-hover/img:opacity-100">
-                                                        <i data-lucide="x" className="w-3 h-3"></i>
-                                                    </button>
-                                                </div>
+                                                <img key={i} src={img} className="w-10 h-10 object-cover rounded-lg border border-white/10" />
                                             ))}
                                         </div>
                                     </div>
-
-                                    <button disabled={uploading || dbError} className="w-full bg-red-600 py-5 rounded-2xl font-black uppercase text-[11px] tracking-widest shadow-xl shadow-red-600/20 hover:bg-red-700 transition-all disabled:opacity-20 flex items-center justify-center gap-2">
-                                        {uploading ? (
-                                            <><i data-lucide="loader-2" className="w-4 h-4 animate-spin"></i> Inviando...</>
-                                        ) : 'Pubblica Veicolo'}
+                                    <button disabled={uploading} className="w-full bg-red-600 py-5 rounded-2xl font-black uppercase text-[11px] tracking-widest shadow-xl shadow-red-600/20 hover:bg-red-700 transition-all disabled:opacity-50">
+                                        {uploading ? 'Caricamento...' : 'Pubblica Veicolo'}
                                     </button>
                                 </div>
                             </form>
                         </div>
 
-                        {/* List */}
                         <div className="lg:col-span-8">
-                            <div className="flex items-center justify-between mb-8">
-                                <h2 className="text-xl font-black uppercase italic text-white">Auto in Vetrina <span className="text-slate-500 font-medium ml-2">({autoList.length})</span></h2>
-                            </div>
-                            
+                            <h2 className="text-xl font-black uppercase italic text-white mb-8">Veicoli Online ({autoList.length})</h2>
                             <div className="grid md:grid-cols-2 gap-6">
-                                {autoList.length === 0 ? (
-                                    <div className="col-span-full py-32 bg-slate-900/20 rounded-[3rem] border border-dashed border-white/5 text-center">
-                                        <div className="bg-slate-800/50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
-                                            <i data-lucide="car" className="text-slate-700 w-10 h-10"></i>
+                                {autoList.map(car => (
+                                    <div key={car.id} className="bg-slate-900/40 rounded-[2.5rem] border border-white/5 overflow-hidden flex flex-col group transition-all">
+                                        <img src={car.immagine} className="h-48 w-full object-cover" />
+                                        <div className="p-6">
+                                            <div className="flex justify-between items-start mb-4">
+                                                <div>
+                                                    <p className="text-red-600 text-[10px] font-black uppercase tracking-widest">{car.marca}</p>
+                                                    <h4 className="text-lg font-bold text-white">{car.modello}</h4>
+                                                </div>
+                                                <div className="text-lg font-black text-white">€{car.prezzo?.toLocaleString()}</div>
+                                            </div>
+                                            <div className="flex justify-between items-center pt-4 border-t border-white/5">
+                                                <span className="text-[10px] font-bold text-slate-500 uppercase">{car.anno} • {car.km?.toLocaleString()} KM</span>
+                                                <button onClick={async () => {
+                                                    if(confirm("Vuoi rimuovere il veicolo?")) {
+                                                        await db.collection(COLLECTION_PATH).doc(car.id).delete();
+                                                    }
+                                                }} className="text-red-500 hover:scale-110 transition">
+                                                    <i data-lucide="trash-2" className="w-4 h-4"></i>
+                                                </button>
+                                            </div>
                                         </div>
-                                        <p className="text-slate-600 uppercase text-[10px] font-black tracking-[0.2em]">Nessun veicolo caricato</p>
-                                        <p className="text-slate-700 text-xs mt-2 font-medium">Usa il modulo a sinistra per iniziare.</p>
                                     </div>
-                                ) : (
-                                    autoList.map(car => (
-                                        <div key={car.id} className="bg-slate-900/40 rounded-[2.5rem] border border-white/5 overflow-hidden flex flex-col group hover:border-red-600/30 transition-all duration-500">
-                                            <div className="relative h-56 overflow-hidden">
-                                                <img src={car.immagine} className="h-full w-full object-cover group-hover:scale-105 transition duration-700" />
-                                                <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-md px-4 py-2 rounded-2xl font-black text-white text-lg">
-                                                    €{car.prezzo?.toLocaleString()}
-                                                </div>
-                                            </div>
-                                            <div className="p-8">
-                                                <div className="flex justify-between items-start mb-6">
-                                                    <div>
-                                                        <p className="text-red-600 text-[10px] font-black uppercase tracking-[0.3em] mb-1">{car.marca}</p>
-                                                        <h4 className="text-xl font-bold uppercase text-white tracking-tight">{car.modello}</h4>
-                                                    </div>
-                                                </div>
-                                                
-                                                <div className="grid grid-cols-2 gap-4 mb-6">
-                                                    <div className="bg-white/5 p-3 rounded-xl">
-                                                        <p className="text-[9px] text-slate-500 uppercase font-bold mb-1">Anno</p>
-                                                        <p className="text-sm font-bold text-slate-200">{car.anno}</p>
-                                                    </div>
-                                                    <div className="bg-white/5 p-3 rounded-xl">
-                                                        <p className="text-[9px] text-slate-500 uppercase font-bold mb-1">Km</p>
-                                                        <p className="text-sm font-bold text-slate-200">{car.km?.toLocaleString()}</p>
-                                                    </div>
-                                                </div>
-
-                                                <div className="flex justify-between items-center pt-6 border-t border-white/5">
-                                                    <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">{car.alimentazione}</span>
-                                                    <button onClick={async () => {
-                                                        if(confirm("Sei sicuro di voler rimuovere questa auto definitivamente?")) {
-                                                            try {
-                                                                await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('automobili').doc(car.id).delete();
-                                                            } catch(e) {
-                                                                alert("Errore durante l'eliminazione.");
-                                                            }
-                                                        }
-                                                    }} className="bg-red-600/10 p-3 rounded-xl text-red-500 hover:bg-red-600 hover:text-white transition-all">
-                                                        <i data-lucide="trash-2" className="w-4 h-4"></i>
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))
-                                )}
+                                ))}
                             </div>
                         </div>
                     </div>
