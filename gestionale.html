@@ -15,6 +15,8 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;700;800&display=swap');
         body { font-family: 'Plus Jakarta Sans', sans-serif; background: #0f172a; color: white; }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
 </head>
 <body>
@@ -31,7 +33,7 @@
             
             const [newCar, setNewCar] = useState({
                 marca: '', modello: '', prezzo: '', anno: '', km: '', 
-                alimentazione: 'Benzina', categoria: 'Berlina', immagine: ''
+                alimentazione: 'Benzina', categoria: 'Berlina', immagini: []
             });
 
             useEffect(() => {
@@ -58,7 +60,6 @@
                         db.current = firebase.firestore();
                         auth.current = firebase.auth();
 
-                        // Procedura di autenticazione obbligatoria prima di accedere ai dati
                         const performSignIn = async () => {
                             if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                                 try {
@@ -79,7 +80,6 @@
                                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'max-car-tivoli';
                                 const path = `artifacts/${appId}/public/data/automobili`;
                                 
-                                // Listener attivato solo dopo l'autenticazione
                                 db.current.collection(path).onSnapshot(
                                     snapshot => {
                                         setAutoList(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -104,12 +104,12 @@
 
             useEffect(() => {
                 if (window.lucide) window.lucide.createIcons();
-            }, [autoList, loading]);
+            }, [autoList, loading, newCar.immagini]);
 
             const saveCar = async (e) => {
                 e.preventDefault();
                 if (!user || !db.current) return;
-                if (!newCar.immagine) return alert("Inserisci un'immagine");
+                if (newCar.immagini.length === 0) return alert("Inserisci almeno una foto");
 
                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'max-car-tivoli';
                 try {
@@ -118,9 +118,10 @@
                         prezzo: Number(newCar.prezzo),
                         km: Number(newCar.km),
                         anno: Number(newCar.anno),
+                        immagine: newCar.immagini[0], // Foto principale per compatibilità con la vetrina esistente
                         createdAt: firebase.firestore.FieldValue.serverTimestamp()
                     });
-                    setNewCar({ marca: '', modello: '', prezzo: '', anno: '', km: '', alimentazione: 'Benzina', categoria: 'Berlina', immagine: '' });
+                    setNewCar({ marca: '', modello: '', prezzo: '', anno: '', km: '', alimentazione: 'Benzina', categoria: 'Berlina', immagini: [] });
                 } catch (err) {
                     console.error("Error saving car:", err);
                 }
@@ -139,12 +140,29 @@
             };
 
             const handleFile = (e) => {
-                const file = e.target.files[0];
-                if (file) {
-                    const reader = new FileReader();
-                    reader.onloadend = () => setNewCar({...newCar, immagine: reader.result});
-                    reader.readAsDataURL(file);
+                const files = Array.from(e.target.files);
+                if (newCar.immagini.length + files.length > 5) {
+                    alert("Puoi caricare al massimo 5 foto per annuncio");
+                    return;
                 }
+
+                files.forEach(file => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        setNewCar(prev => ({
+                            ...prev,
+                            immagini: [...prev.immagini, reader.result]
+                        }));
+                    };
+                    reader.readAsDataURL(file);
+                });
+            };
+
+            const removeImage = (index) => {
+                setNewCar(prev => ({
+                    ...prev,
+                    immagini: prev.immagini.filter((_, i) => i !== index)
+                }));
             };
 
             if (loading) return (
@@ -158,13 +176,14 @@
                 <div className="p-6 max-w-6xl mx-auto">
                     <header className="flex justify-between items-center mb-10 border-b border-white/10 pb-6">
                         <div>
-                            <h1 className="text-2xl font-black text-red-600 uppercase italic">Max Car | Gestionale</h1>
-                            <p className="text-xs text-slate-400 font-bold uppercase tracking-tighter">
-                                {user ? `Accesso eseguito: ${user.uid.substring(0, 8)}...` : 'Connessione in corso...'}
+                            <h1 className="text-2xl font-black text-red-600 uppercase italic leading-none">Max Car | Gestionale</h1>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">
+                                {user ? `Sessione Attiva: ${user.uid.substring(0, 8)}` : 'Connessione...'}
                             </p>
                         </div>
-                        <div className="bg-slate-800 px-4 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest border border-white/5">
-                            Pannello Amministrativo
+                        <div className="hidden md:flex items-center gap-2 bg-slate-800 px-4 py-2 rounded-full border border-white/5 text-[10px] font-bold uppercase tracking-widest">
+                            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                            Online
                         </div>
                     </header>
 
@@ -172,34 +191,67 @@
                         {/* Form Colonna */}
                         <div className="lg:col-span-1">
                             <form onSubmit={saveCar} className="bg-slate-800 p-6 rounded-3xl shadow-2xl sticky top-6 border border-white/5">
-                                <h2 className="text-lg font-bold mb-6 flex items-center gap-2"><i data-lucide="plus-circle" className="text-red-600"></i> Aggiungi Auto</h2>
+                                <h2 className="text-lg font-bold mb-6 flex items-center gap-2 leading-none uppercase italic">
+                                    <i data-lucide="plus-square" className="text-red-600 w-5 h-5"></i> 
+                                    Nuovo Veicolo
+                                </h2>
+                                
                                 <div className="space-y-4">
-                                    <input required placeholder="Marca" className="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl outline-none focus:border-red-600 transition" value={newCar.marca} onChange={e => setNewCar({...newCar, marca: e.target.value})} />
-                                    <input required placeholder="Modello" className="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl outline-none focus:border-red-600 transition" value={newCar.modello} onChange={e => setNewCar({...newCar, modello: e.target.value})} />
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <input required type="number" placeholder="Prezzo (€)" className="bg-slate-900 border border-slate-700 p-3 rounded-xl outline-none focus:border-red-600" value={newCar.prezzo} onChange={e => setNewCar({...newCar, prezzo: e.target.value})} />
-                                        <input required type="number" placeholder="Anno" className="bg-slate-900 border border-slate-700 p-3 rounded-xl outline-none focus:border-red-600" value={newCar.anno} onChange={e => setNewCar({...newCar, anno: e.target.value})} />
-                                    </div>
-                                    <input required type="number" placeholder="Chilometri" className="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl outline-none focus:border-red-600" value={newCar.km} onChange={e => setNewCar({...newCar, km: e.target.value})} />
+                                    <input required placeholder="Marca" className="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl outline-none focus:border-red-600 transition text-sm" value={newCar.marca} onChange={e => setNewCar({...newCar, marca: e.target.value})} />
+                                    <input required placeholder="Modello" className="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl outline-none focus:border-red-600 transition text-sm" value={newCar.modello} onChange={e => setNewCar({...newCar, modello: e.target.value})} />
                                     
-                                    <div className="border-2 border-dashed border-slate-700 rounded-xl p-4 text-center cursor-pointer hover:bg-slate-900 transition relative overflow-hidden group">
-                                        {newCar.immagine ? (
-                                            <div className="relative h-40">
-                                                <img src={newCar.immagine} className="h-full w-full mx-auto rounded-lg object-cover" />
-                                                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
-                                                    <span className="text-[10px] font-bold uppercase">Cambia Foto</span>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <div className="py-8 flex flex-col items-center gap-2">
-                                                <i data-lucide="camera" className="opacity-20 w-8 h-8"></i>
-                                                <div className="text-[10px] font-bold uppercase opacity-40">Seleziona Foto Veicolo</div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="space-y-1">
+                                            <label className="text-[9px] uppercase font-bold text-slate-500 px-1">Prezzo (€)</label>
+                                            <input required type="number" className="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl outline-none focus:border-red-600 text-sm" value={newCar.prezzo} onChange={e => setNewCar({...newCar, prezzo: e.target.value})} />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[9px] uppercase font-bold text-slate-500 px-1">Anno</label>
+                                            <input required type="number" className="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl outline-none focus:border-red-600 text-sm" value={newCar.anno} onChange={e => setNewCar({...newCar, anno: e.target.value})} />
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="text-[9px] uppercase font-bold text-slate-500 px-1">Chilometraggio</label>
+                                        <input required type="number" className="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl outline-none focus:border-red-600 transition text-sm" value={newCar.km} onChange={e => setNewCar({...newCar, km: e.target.value})} />
+                                    </div>
+                                    
+                                    {/* Caricamento Immagini */}
+                                    <div className="space-y-3 pt-2">
+                                        <label className="text-[9px] uppercase font-bold text-slate-500 px-1 flex justify-between">
+                                            Foto Veicolo <span>{newCar.immagini.length}/5</span>
+                                        </label>
+                                        
+                                        {/* Gallery Anteprima */}
+                                        {newCar.immagini.length > 0 && (
+                                            <div className="flex gap-2 overflow-x-auto pb-2 hide-scrollbar">
+                                                {newCar.immagini.map((img, idx) => (
+                                                    <div key={idx} className="relative w-16 h-16 flex-shrink-0 group">
+                                                        <img src={img} className="w-full h-full object-cover rounded-lg border border-white/10" />
+                                                        <button 
+                                                            type="button"
+                                                            onClick={() => removeImage(idx)}
+                                                            className="absolute -top-1 -right-1 bg-red-600 rounded-full p-1 shadow-lg opacity-0 group-hover:opacity-100 transition"
+                                                        >
+                                                            <i data-lucide="x" className="w-2 h-2"></i>
+                                                        </button>
+                                                    </div>
+                                                ))}
                                             </div>
                                         )}
-                                        <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" accept="image/*" onChange={handleFile} />
+
+                                        {newCar.immagini.length < 5 && (
+                                            <div className="border-2 border-dashed border-slate-700 rounded-xl p-4 text-center cursor-pointer hover:bg-slate-900 transition relative overflow-hidden group min-h-[80px] flex flex-col items-center justify-center">
+                                                <i data-lucide="image-plus" className="opacity-20 w-6 h-6 mb-1"></i>
+                                                <div className="text-[10px] font-bold uppercase opacity-40">Aggiungi Foto</div>
+                                                <input type="file" multiple className="absolute inset-0 opacity-0 cursor-pointer" accept="image/*" onChange={handleFile} />
+                                            </div>
+                                        )}
                                     </div>
                                     
-                                    <button disabled={!user} className="w-full bg-red-600 py-4 rounded-xl font-black uppercase shadow-lg hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed">Pubblica Annuncio</button>
+                                    <button disabled={!user || newCar.immagini.length === 0} className="w-full bg-red-600 py-4 rounded-xl font-black uppercase shadow-lg hover:bg-red-700 transition disabled:opacity-30 disabled:grayscale">
+                                        Pubblica Annuncio
+                                    </button>
                                 </div>
                             </form>
                         </div>
@@ -207,30 +259,38 @@
                         {/* Lista Colonna */}
                         <div className="lg:col-span-2">
                             <div className="flex justify-between items-center mb-6">
-                                <h2 className="text-lg font-bold flex items-center gap-2">
-                                    Auto Online <span className="bg-red-600 text-white text-[10px] px-2 py-0.5 rounded-full">{autoList.length}</span>
+                                <h2 className="text-lg font-bold flex items-center gap-2 italic uppercase">
+                                    Veicoli in Vetrina <span className="bg-red-600 text-white text-[10px] px-2 py-0.5 rounded-full not-italic">{autoList.length}</span>
                                 </h2>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {autoList.map(car => (
-                                    <div key={car.id} className="bg-slate-800/50 rounded-2xl p-4 flex gap-4 items-center border border-white/5 hover:border-white/10 transition">
-                                        <div className="w-20 h-20 flex-shrink-0">
-                                            <img src={car.immagine} className="w-full h-full rounded-xl object-cover" />
+                                {autoList.sort((a,b) => b.createdAt - a.createdAt).map(car => (
+                                    <div key={car.id} className="bg-slate-800/40 rounded-2xl p-4 flex gap-4 items-center border border-white/5 hover:border-red-600/30 transition-all duration-300">
+                                        <div className="w-24 h-24 flex-shrink-0 relative">
+                                            <img src={car.immagine || (car.immagini && car.immagini[0])} className="w-full h-full rounded-xl object-cover shadow-lg" />
+                                            {car.immagini && car.immagini.length > 1 && (
+                                                <div className="absolute bottom-1 right-1 bg-black/60 px-1.5 py-0.5 rounded text-[8px] font-bold">
+                                                    +{car.immagini.length - 1}
+                                                </div>
+                                            )}
                                         </div>
                                         <div className="flex-grow">
-                                            <h4 className="font-bold uppercase text-xs tracking-tight">{car.marca} {car.modello}</h4>
-                                            <p className="text-[10px] text-slate-400 font-bold">€{car.prezzo.toLocaleString()} • {car.km.toLocaleString()} KM</p>
-                                            <p className="text-[9px] text-red-600/50 font-bold uppercase">{car.anno}</p>
+                                            <h4 className="font-black uppercase text-sm tracking-tight leading-none mb-1">{car.marca} {car.modello}</h4>
+                                            <div className="flex flex-wrap gap-2 mb-2">
+                                                <span className="text-[9px] font-bold uppercase text-red-500 bg-red-500/10 px-2 py-0.5 rounded-md">€{car.prezzo.toLocaleString()}</span>
+                                                <span className="text-[9px] font-bold uppercase text-slate-400 bg-slate-700/50 px-2 py-0.5 rounded-md">{car.km.toLocaleString()} KM</span>
+                                            </div>
+                                            <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">{car.anno} • {car.alimentazione}</p>
                                         </div>
-                                        <button onClick={() => deleteCar(car.id)} className="bg-red-500/10 text-red-500 p-3 rounded-xl hover:bg-red-500 hover:text-white transition">
+                                        <button onClick={() => deleteCar(car.id)} className="bg-red-500/5 text-red-500 p-3 rounded-xl hover:bg-red-500 hover:text-white transition shadow-sm border border-red-500/10">
                                             <i data-lucide="trash-2" className="w-4 h-4"></i>
                                         </button>
                                     </div>
                                 ))}
                                 {autoList.length === 0 && (
-                                    <div className="col-span-full border border-dashed border-white/5 rounded-3xl py-20 text-center opacity-20">
-                                        <i data-lucide="package-open" className="mx-auto w-12 h-12 mb-2"></i>
-                                        <p className="uppercase font-bold text-xs tracking-widest">Nessun annuncio caricato</p>
+                                    <div className="col-span-full border border-dashed border-white/5 rounded-3xl py-20 text-center opacity-10">
+                                        <i data-lucide="car-front" className="mx-auto w-16 h-16 mb-2"></i>
+                                        <p className="uppercase font-bold text-xs tracking-[0.3em]">Nessun Veicolo</p>
                                     </div>
                                 )}
                             </div>
