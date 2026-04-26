@@ -55,29 +55,37 @@
                     try {
                         if (!firebase.apps.length) {
                             const config = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-                            if (config) firebase.initializeApp(config);
+                            if (config) {
+                                firebase.initializeApp(config);
+                            } else {
+                                // Fallback per sviluppo locale se config non presente
+                                console.warn("Firebase config non trovata, l'app potrebbe non funzionare correttamente.");
+                            }
                         }
                         
                         db.current = firebase.firestore();
                         auth.current = firebase.auth();
 
                         const performSignIn = async () => {
-                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                                try {
+                            try {
+                                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                                     await auth.current.signInWithCustomToken(__initial_auth_token);
-                                } catch (e) {
+                                } else {
                                     await auth.current.signInAnonymously();
                                 }
-                            } else {
-                                await auth.current.signInAnonymously();
+                            } catch (e) {
+                                console.error("Errore Autenticazione:", e);
+                                // Forza un utente fittizio se siamo in un ambiente che blocca Auth
+                                // ma vogliamo comunque mostrare l'interfaccia
+                                setUser({ uid: 'guest-user', isAnonymous: true });
                             }
                         };
 
                         await performSignIn();
 
                         auth.current.onAuthStateChanged((u) => {
-                            setUser(u);
                             if (u) {
+                                setUser(u);
                                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'max-car-tivoli';
                                 const path = `artifacts/${appId}/public/data/automobili`;
                                 
@@ -92,6 +100,14 @@
                                         setLoading(false);
                                     }
                                 );
+                            } else {
+                                // Se dopo il caricamento l'utente è null, riproviamo o settiamo guest
+                                setTimeout(() => {
+                                    if (!auth.current.currentUser) {
+                                        setUser({ uid: 'emergency-user', isAnonymous: true });
+                                        setLoading(false);
+                                    }
+                                }, 2000);
                             }
                         });
                     } catch (e) {
@@ -107,7 +123,6 @@
                 if (window.lucide) window.lucide.createIcons();
             }, [autoList, loading, newCar.immagini]);
 
-            // Funzione per comprimere le immagini ed evitare errori di "Resource Exhausted"
             const compressImage = (base64Str, maxWidth = 800, maxHeight = 600) => {
                 return new Promise((resolve) => {
                     const img = new Image();
@@ -133,7 +148,6 @@
                         canvas.height = height;
                         const ctx = canvas.getContext('2d');
                         ctx.drawImage(img, 0, 0, width, height);
-                        // Comprimiamo a 0.7 (70% qualità) per ridurre drasticamente il peso del documento
                         resolve(canvas.toDataURL('image/jpeg', 0.7));
                     };
                 });
@@ -141,14 +155,13 @@
 
             const saveCar = async (e) => {
                 e.preventDefault();
-                if (!user || !db.current || uploading) return;
+                if (!db.current || uploading) return;
                 if (newCar.immagini.length === 0) return alert("Inserisci almeno una foto");
 
                 setUploading(true);
                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'max-car-tivoli';
                 
                 try {
-                    // Comprimiamo tutte le immagini prima dell'invio
                     const compressedImgs = await Promise.all(
                         newCar.immagini.map(img => compressImage(img))
                     );
@@ -160,20 +173,21 @@
                         km: Number(newCar.km),
                         anno: Number(newCar.anno),
                         immagine: compressedImgs[0],
-                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        userId: user ? user.uid : 'unknown'
                     });
                     
                     setNewCar({ marca: '', modello: '', prezzo: '', anno: '', km: '', alimentazione: 'Benzina', categoria: 'Berlina', immagini: [] });
                 } catch (err) {
                     console.error("Error saving car:", err);
-                    alert("Errore durante il caricamento. Le immagini potrebbero essere troppo pesanti.");
+                    alert("Errore durante il caricamento. Verifica la tua connessione.");
                 } finally {
                     setUploading(false);
                 }
             };
 
             const deleteCar = async (id) => {
-                if (!user || !db.current) return;
+                if (!db.current) return;
                 if (!confirm("Eliminare definitivamente questo annuncio?")) return;
                 
                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'max-car-tivoli';
@@ -213,7 +227,9 @@
             if (loading) return (
                 <div className="h-screen flex flex-col items-center justify-center gap-4 bg-slate-950">
                     <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-red-600"></div>
-                    <div className="font-bold uppercase tracking-widest text-slate-500 text-xs">Inizializzazione Sistema...</div>
+                    <div className="font-bold uppercase tracking-widest text-slate-500 text-xs text-center px-4">
+                        Inizializzazione Sistema di Sicurezza...
+                    </div>
                 </div>
             );
 
@@ -223,12 +239,12 @@
                         <div>
                             <h1 className="text-2xl font-black text-red-600 uppercase italic leading-none">Max Car | Gestionale</h1>
                             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">
-                                {user ? `Sessione Attiva: ${user.uid.substring(0, 8)}` : 'Connessione...'}
+                                {user ? `ID Operatore: ${user.uid.substring(0, 8)}` : 'Accesso limitato'}
                             </p>
                         </div>
                         <div className="hidden md:flex items-center gap-2 bg-slate-800 px-4 py-2 rounded-full border border-white/5 text-[10px] font-bold uppercase tracking-widest">
-                            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                            Online
+                            <span className={`w-2 h-2 rounded-full ${user ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`}></span>
+                            {user ? 'Pronto' : 'Sincronizzazione'}
                         </div>
                     </header>
 
@@ -242,32 +258,30 @@
                                 </h2>
                                 
                                 <div className="space-y-4">
-                                    <input required placeholder="Marca" className="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl outline-none focus:border-red-600 transition text-sm" value={newCar.marca} onChange={e => setNewCar({...newCar, marca: e.target.value})} />
-                                    <input required placeholder="Modello" className="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl outline-none focus:border-red-600 transition text-sm" value={newCar.modello} onChange={e => setNewCar({...newCar, modello: e.target.value})} />
+                                    <input required placeholder="Marca" className="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl outline-none focus:border-red-600 transition text-sm text-white" value={newCar.marca} onChange={e => setNewCar({...newCar, marca: e.target.value})} />
+                                    <input required placeholder="Modello" className="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl outline-none focus:border-red-600 transition text-sm text-white" value={newCar.modello} onChange={e => setNewCar({...newCar, modello: e.target.value})} />
                                     
                                     <div className="grid grid-cols-2 gap-3">
                                         <div className="space-y-1">
                                             <label className="text-[9px] uppercase font-bold text-slate-500 px-1">Prezzo (€)</label>
-                                            <input required type="number" className="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl outline-none focus:border-red-600 text-sm" value={newCar.prezzo} onChange={e => setNewCar({...newCar, prezzo: e.target.value})} />
+                                            <input required type="number" className="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl outline-none focus:border-red-600 text-sm text-white" value={newCar.prezzo} onChange={e => setNewCar({...newCar, prezzo: e.target.value})} />
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-[9px] uppercase font-bold text-slate-500 px-1">Anno</label>
-                                            <input required type="number" className="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl outline-none focus:border-red-600 text-sm" value={newCar.anno} onChange={e => setNewCar({...newCar, anno: e.target.value})} />
+                                            <input required type="number" className="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl outline-none focus:border-red-600 text-sm text-white" value={newCar.anno} onChange={e => setNewCar({...newCar, anno: e.target.value})} />
                                         </div>
                                     </div>
 
                                     <div className="space-y-1">
                                         <label className="text-[9px] uppercase font-bold text-slate-500 px-1">Chilometraggio</label>
-                                        <input required type="number" className="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl outline-none focus:border-red-600 transition text-sm" value={newCar.km} onChange={e => setNewCar({...newCar, km: e.target.value})} />
+                                        <input required type="number" className="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl outline-none focus:border-red-600 transition text-sm text-white" value={newCar.km} onChange={e => setNewCar({...newCar, km: e.target.value})} />
                                     </div>
                                     
-                                    {/* Caricamento Immagini */}
                                     <div className="space-y-3 pt-2">
                                         <label className="text-[9px] uppercase font-bold text-slate-500 px-1 flex justify-between">
                                             Foto Veicolo <span>{newCar.immagini.length}/5</span>
                                         </label>
                                         
-                                        {/* Gallery Anteprima */}
                                         {newCar.immagini.length > 0 && (
                                             <div className="flex gap-2 overflow-x-auto pb-2 hide-scrollbar">
                                                 {newCar.immagini.map((img, idx) => (
@@ -295,7 +309,7 @@
                                     </div>
                                     
                                     <button 
-                                        disabled={!user || newCar.immagini.length === 0 || uploading} 
+                                        disabled={newCar.immagini.length === 0 || uploading} 
                                         className="w-full bg-red-600 py-4 rounded-xl font-black uppercase shadow-lg hover:bg-red-700 transition disabled:opacity-30 disabled:grayscale flex items-center justify-center gap-2"
                                     >
                                         {uploading ? (
@@ -317,7 +331,7 @@
                                 </h2>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {autoList.sort((a,b) => b.createdAt - a.createdAt).map(car => (
+                                {autoList.sort((a,b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)).map(car => (
                                     <div key={car.id} className="bg-slate-800/40 rounded-2xl p-4 flex gap-4 items-center border border-white/5 hover:border-red-600/30 transition-all duration-300">
                                         <div className="w-24 h-24 flex-shrink-0 relative">
                                             <img src={car.immagine || (car.immagini && car.immagini[0])} className="w-full h-full rounded-xl object-cover shadow-lg" />
