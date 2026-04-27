@@ -17,10 +17,10 @@
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
-        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #0f172a; color: white; margin: 0; }
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #0f172a; color: white; margin: 0; min-height: 100vh; }
         .glass { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.05); }
-        input, select { background: rgba(255, 255, 255, 0.05) !important; border: 1px solid rgba(255, 255, 255, 0.1) !important; color: white !important; }
-        input:focus { border-color: #ef4444 !important; outline: none; }
+        input, select, textarea { background: rgba(255, 255, 255, 0.05) !important; border: 1px solid rgba(255, 255, 255, 0.1) !important; color: white !important; }
+        input:focus, textarea:focus { border-color: #ef4444 !important; outline: none; }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
     </style>
@@ -52,7 +52,7 @@
             const [isSubmitting, setIsSubmitting] = useState(false);
             const [newCar, setNewCar] = useState({
                 marca: '', modello: '', prezzo: '', anno: '', km: '', 
-                alimentazione: 'Diesel', categoria: 'SUV', immagini: []
+                alimentazione: 'Diesel', categoria: 'SUV', descrizione: '', immagini: []
             });
 
             useEffect(() => {
@@ -66,7 +66,7 @@
                 init();
             }, []);
 
-            // Compressione e aggiunta immagine all'array
+            // Compressione ottimizzata per evitare limiti Firestore
             const handleFile = (e) => {
                 const files = Array.from(e.target.files);
                 const remainingSlots = 5 - newCar.immagini.length;
@@ -80,8 +80,9 @@
                             const canvas = document.createElement('canvas');
                             let width = img.width;
                             let height = img.height;
-                            const MAX_SIZE = 1000;
-
+                            
+                            // Riduzione risoluzione più aggressiva (max 800px)
+                            const MAX_SIZE = 800; 
                             if (width > MAX_SIZE || height > MAX_SIZE) {
                                 if (width > height) {
                                     height *= MAX_SIZE / width;
@@ -96,7 +97,9 @@
                             canvas.height = height;
                             const ctx = canvas.getContext('2d');
                             ctx.drawImage(img, 0, 0, width, height);
-                            const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+                            
+                            // Qualità ridotta a 0.5 per risparmiare spazio
+                            const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
 
                             setNewCar(prev => ({
                                 ...prev,
@@ -107,7 +110,7 @@
                     };
                     reader.readAsDataURL(file);
                 });
-                e.target.value = ""; // Reset input
+                e.target.value = ""; 
             };
 
             const removeImage = (index) => {
@@ -123,19 +126,30 @@
                 
                 setIsSubmitting(true);
                 try {
+                    // Calcolo approssimativo dimensione per evitare crash
+                    const totalSize = JSON.stringify(newCar).length;
+                    if (totalSize > 1000000) {
+                        throw new Error("I dati sono troppo pesanti. Prova a caricare meno foto o foto più piccole.");
+                    }
+
                     await db.collection(COLLECTION_PATH).add({
                         ...newCar,
                         prezzo: Number(newCar.prezzo),
                         km: Number(newCar.km),
                         anno: Number(newCar.anno),
-                        immagine: newCar.immagini[0], // Foto principale per compatibilità vecchia UI
-                        galleria: newCar.immagini,   // Array completo per nuova UI
+                        immagine: newCar.immagini[0], 
+                        galleria: newCar.immagini,   
                         createdAt: firebase.firestore.FieldValue.serverTimestamp()
                     });
-                    setNewCar({ marca: '', modello: '', prezzo: '', anno: '', km: '', alimentazione: 'Diesel', categoria: 'SUV', immagini: [] });
+                    
+                    setNewCar({ 
+                        marca: '', modello: '', prezzo: '', anno: '', km: '', 
+                        alimentazione: 'Diesel', categoria: 'SUV', descrizione: '', immagini: [] 
+                    });
+                    alert("Auto pubblicata con successo!");
                 } catch (error) {
                     console.error(error);
-                    alert("Errore durante il salvataggio");
+                    alert(error.message || "Errore durante il salvataggio. Riprova con meno foto.");
                 }
                 setIsSubmitting(false);
             };
@@ -161,7 +175,6 @@
                     </header>
 
                     <main className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
-                        {/* Form di inserimento */}
                         <div className="lg:col-span-1">
                             <form onSubmit={saveCar} className="glass p-6 rounded-[2rem] sticky top-8">
                                 <h2 className="text-lg font-bold mb-6 flex items-center gap-2 uppercase tracking-tight">
@@ -169,7 +182,6 @@
                                 </h2>
 
                                 <div className="space-y-4">
-                                    {/* Griglia Anteprime Immagini */}
                                     <div className="grid grid-cols-3 gap-2">
                                         {newCar.immagini.map((img, idx) => (
                                             <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-white/10 shadow-lg">
@@ -193,11 +205,11 @@
                                             </label>
                                         )}
                                     </div>
-                                    <p className="text-[10px] text-slate-500 text-center uppercase font-bold">Max 5 foto • PNG/JPG</p>
+                                    <p className="text-[10px] text-slate-500 text-center uppercase font-bold">Max 5 foto • Dimensione ottimizzata</p>
 
                                     <div className="grid grid-cols-2 gap-3">
-                                        <input required placeholder="Marca" className="p-3 rounded-xl text-sm" value={newCar.marca} onChange={e => setNewCar({...newCar, marca: e.target.value})} />
-                                        <input required placeholder="Modello" className="p-3 rounded-xl text-sm" value={newCar.modello} onChange={e => setNewCar({...newCar, modello: e.target.value})} />
+                                        <input required placeholder="Marca (es. Fiat)" className="p-3 rounded-xl text-sm" value={newCar.marca} onChange={e => setNewCar({...newCar, marca: e.target.value})} />
+                                        <input required placeholder="Modello (es. 500)" className="p-3 rounded-xl text-sm" value={newCar.modello} onChange={e => setNewCar({...newCar, modello: e.target.value})} />
                                     </div>
 
                                     <div className="grid grid-cols-3 gap-2">
@@ -223,9 +235,16 @@
                                         </select>
                                     </div>
 
+                                    <textarea 
+                                        placeholder="Descrizione opzionale (optional)" 
+                                        className="w-full p-3 rounded-xl text-sm min-h-[100px] resize-none"
+                                        value={newCar.descrizione}
+                                        onChange={e => setNewCar({...newCar, descrizione: e.target.value})}
+                                    ></textarea>
+
                                     <button 
                                         disabled={isSubmitting}
-                                        className={`w-full py-4 rounded-2xl font-bold uppercase tracking-widest text-sm transition shadow-xl ${isSubmitting ? 'bg-slate-700' : 'bg-red-600 hover:bg-red-700'}`}
+                                        className={`w-full py-4 rounded-2xl font-bold uppercase tracking-widest text-sm transition shadow-xl ${isSubmitting ? 'bg-slate-700 animate-pulse' : 'bg-red-600 hover:bg-red-700'}`}
                                     >
                                         {isSubmitting ? 'Salvataggio...' : 'Pubblica nel piazzale'}
                                     </button>
@@ -233,7 +252,6 @@
                             </form>
                         </div>
 
-                        {/* Elenco auto caricate */}
                         <div className="lg:col-span-2 space-y-4">
                             <h2 className="font-bold uppercase tracking-widest text-xs text-slate-500">Auto Online ({autoList.length})</h2>
 
@@ -241,13 +259,14 @@
                                 {autoList.map(car => (
                                     <div key={car.id} className="glass p-4 rounded-3xl flex gap-4 items-center group relative overflow-hidden">
                                         <div className="w-24 h-24 rounded-2xl overflow-hidden flex-shrink-0 border border-white/5 bg-slate-800">
-                                            <img src={car.immagine || (car.galleria && car.galleria[0])} className="w-full h-full object-cover" />
+                                            <img src={car.immagine} className="w-full h-full object-cover" />
                                         </div>
                                         <div className="flex-grow">
                                             <h3 className="font-bold uppercase text-sm leading-tight">{car.marca} <span className="text-red-600">{car.modello}</span></h3>
                                             <div className="text-[10px] text-slate-500 font-bold mt-1 uppercase">
                                                 {car.anno} • {car.km?.toLocaleString()} KM • €{car.prezzo?.toLocaleString()}
                                             </div>
+                                            {car.descrizione && <p className="text-[9px] text-slate-400 mt-1 line-clamp-1 italic">{car.descrizione}</p>}
                                             <div className="flex gap-1 mt-2">
                                                 {car.galleria?.map((_, i) => (
                                                     <div key={i} className="w-2 h-1 rounded-full bg-red-600/30"></div>
@@ -256,7 +275,7 @@
                                         </div>
                                         <button 
                                             onClick={() => deleteCar(car.id)}
-                                            className="p-3 bg-red-600/10 text-red-600 rounded-xl opacity-0 group-hover:opacity-100 transition hover:bg-red-600 hover:text-white"
+                                            className="p-3 bg-red-600/10 text-red-600 rounded-xl md:opacity-0 group-hover:opacity-100 transition hover:bg-red-600 hover:text-white"
                                         >
                                             <i data-lucide="trash-2" className="w-5 h-5"></i>
                                         </button>
