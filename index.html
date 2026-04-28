@@ -84,6 +84,7 @@
             const [filter, setFilter] = useState('Tutte');
             const [loading, setLoading] = useState(true);
             const [activeImage, setActiveImage] = useState(null);
+            const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
             useEffect(() => {
                 const init = async () => {
@@ -110,10 +111,15 @@
                 init();
             }, []);
 
+            // Ricarica le icone quando cambia pagina o menu
             useEffect(() => {
                 if (window.lucide) window.lucide.createIcons();
+            }, [currentPage, autoList, filter, selectedCar, isMobileMenuOpen]);
+
+            // Scroll in alto al cambio pagina
+            useEffect(() => {
                 window.scrollTo(0, 0);
-            }, [currentPage, autoList, filter, selectedCar]);
+            }, [currentPage, selectedCar]);
 
             // Funzione per gestire l'apertura del prodotto
             const openCarDetails = (car) => {
@@ -135,25 +141,42 @@
             }, [selectedCar]);
 
             return (
-                <div className="min-h-screen flex flex-col bg-slate-50">
-                    <nav className="bg-white/95 backdrop-blur-md border-b sticky top-0 z-50 px-6 py-4 shadow-sm">
+                <div className="min-h-screen flex flex-col bg-slate-50 overflow-x-hidden w-full">
+                    <nav className="bg-white/95 backdrop-blur-md border-b sticky top-0 z-50 px-6 py-4 shadow-sm w-full">
                         <div className="max-w-7xl mx-auto flex justify-between items-center">
-                            <div className="flex items-center gap-2 cursor-pointer" onClick={() => { setCurrentPage('home'); setSelectedCar(null); }}>
+                            <div className="flex items-center gap-2 cursor-pointer" onClick={() => { setCurrentPage('home'); setSelectedCar(null); setIsMobileMenuOpen(false); }}>
                                 <div className="bg-red-600 p-2 rounded-lg text-white">
                                     <i data-lucide="car" className="w-6 h-6"></i>
                                 </div>
                                 <span className="font-extrabold uppercase italic tracking-tighter text-xl text-slate-900">Max Car</span>
                             </div>
-                            <div className="flex gap-4 md:gap-8 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                            
+                            {/* Menu Desktop */}
+                            <div className="hidden md:flex gap-8 text-[10px] font-bold uppercase tracking-widest text-slate-500">
                                 <button onClick={() => { setCurrentPage('home'); setSelectedCar(null); }} className={`hover:text-red-600 transition ${currentPage === 'home' ? 'text-red-600' : ''}`}>Home</button>
                                 <button onClick={() => { setCurrentPage('piazzale'); setSelectedCar(null); }} className={`hover:text-red-600 transition ${currentPage === 'piazzale' ? 'text-red-600' : ''}`}>Piazzale</button>
                                 <button onClick={() => { setCurrentPage('vendi'); setSelectedCar(null); }} className={`hover:text-red-600 transition ${currentPage === 'vendi' ? 'text-red-600' : ''}`}>Vendi Auto</button>
                                 <button onClick={() => { setCurrentPage('contatti'); setSelectedCar(null); }} className={`hover:text-red-600 transition ${currentPage === 'contatti' ? 'text-red-600' : ''}`}>Contatti</button>
                             </div>
+
+                            {/* Hamburger Menu Mobile */}
+                            <button className="md:hidden text-slate-900 focus:outline-none p-2" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
+                                <i data-lucide={isMobileMenuOpen ? "x" : "menu"} className="w-6 h-6"></i>
+                            </button>
                         </div>
+
+                        {/* Dropdown Mobile */}
+                        {isMobileMenuOpen && (
+                            <div className="md:hidden absolute top-full left-0 w-full bg-white border-b shadow-2xl flex flex-col py-6 px-8 gap-6 text-sm font-bold uppercase tracking-widest text-slate-600 animate-in slide-in-from-top-2 duration-300">
+                                <button onClick={() => { setCurrentPage('home'); setSelectedCar(null); setIsMobileMenuOpen(false); }} className={`text-left hover:text-red-600 transition ${currentPage === 'home' ? 'text-red-600' : ''}`}>Home</button>
+                                <button onClick={() => { setCurrentPage('piazzale'); setSelectedCar(null); setIsMobileMenuOpen(false); }} className={`text-left hover:text-red-600 transition ${currentPage === 'piazzale' ? 'text-red-600' : ''}`}>Piazzale</button>
+                                <button onClick={() => { setCurrentPage('vendi'); setSelectedCar(null); setIsMobileMenuOpen(false); }} className={`text-left hover:text-red-600 transition ${currentPage === 'vendi' ? 'text-red-600' : ''}`}>Vendi Auto</button>
+                                <button onClick={() => { setCurrentPage('contatti'); setSelectedCar(null); setIsMobileMenuOpen(false); }} className={`text-left hover:text-red-600 transition ${currentPage === 'contatti' ? 'text-red-600' : ''}`}>Contatti</button>
+                            </div>
+                        )}
                     </nav>
 
-                    <main className="flex-grow">
+                    <main className="flex-grow w-full">
                         {currentPage === 'home' && (
                             <>
                                 <div className="hero-bg min-h-[80vh] flex items-center justify-center text-center text-white px-4">
@@ -192,9 +215,9 @@
                             <div className="py-16 px-6 max-w-7xl mx-auto">
                                 <div className="flex flex-col md:flex-row justify-between items-center mb-12 gap-6 border-b pb-8">
                                     <h2 className="text-4xl font-black uppercase italic tracking-tight">Vetrina <span className="text-red-600 underline">Occasioni</span></h2>
-                                    <div className="flex gap-2 bg-white p-1 rounded-full shadow-sm border">
+                                    <div className="flex gap-2 bg-white p-1 rounded-full shadow-sm border overflow-x-auto max-w-full">
                                         {['Tutte', 'SUV', 'Berlina', 'Utilitaria', 'Sportiva'].map(c => (
-                                            <button key={c} onClick={() => setFilter(c)} className={`px-4 md:px-6 py-2 rounded-full text-[10px] font-bold uppercase transition ${filter === c ? 'bg-red-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>{c}</button>
+                                            <button key={c} onClick={() => setFilter(c)} className={`whitespace-nowrap px-4 md:px-6 py-2 rounded-full text-[10px] font-bold uppercase transition ${filter === c ? 'bg-red-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>{c}</button>
                                         ))}
                                     </div>
                                 </div>
@@ -230,7 +253,7 @@
                                 
                                 <div className="grid lg:grid-cols-2 gap-12 mb-16">
                                     {/* Gallery Section */}
-                                    <div className="space-y-4">
+                                    <div className="space-y-4 overflow-hidden w-full max-w-full">
                                         <div className="rounded-[2.5rem] overflow-hidden shadow-2xl bg-white border border-slate-100 aspect-video relative">
                                             <img src={activeImage} alt={selectedCar.modello} className="w-full h-full object-cover transition-opacity duration-300" />
                                         </div>
@@ -250,91 +273,90 @@
                                     </div>
 
                                     {/* Info Section */}
-                                    <div className="flex flex-col">
+                                    <div className="flex flex-col overflow-hidden w-full max-w-full">
                                         <span className="bg-red-100 text-red-600 px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest w-fit mb-4">{selectedCar.categoria}</span>
-                                        <h1 className="text-5xl font-black uppercase italic tracking-tighter text-slate-900 leading-none mb-2">{selectedCar.marca}</h1>
-                                        <p className="text-2xl text-red-600 font-bold uppercase mb-6">{selectedCar.modello}</p>
+                                        <h1 className="text-5xl font-black uppercase italic tracking-tighter text-slate-900 leading-none mb-2 break-words">{selectedCar.marca}</h1>
+                                        <p className="text-2xl text-red-600 font-bold uppercase mb-6 break-words">{selectedCar.modello}</p>
                                         <div className="text-4xl font-black text-slate-900 mb-8 italic">€ {Number(selectedCar.prezzo)?.toLocaleString()}</div>
                                         
                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
-                                            <div className="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm flex flex-col items-center">
+                                            <div className="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm flex flex-col items-center text-center">
                                                 <i data-lucide="calendar" className="w-4 h-4 text-red-600 mb-2"></i>
                                                 <p className="text-[9px] font-bold text-slate-400 uppercase">Anno</p>
                                                 <p className="font-black text-md text-slate-900">{selectedCar.anno}</p>
                                             </div>
-                                            <div className="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm flex flex-col items-center">
+                                            <div className="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm flex flex-col items-center text-center">
                                                 <i data-lucide="gauge" className="w-4 h-4 text-red-600 mb-2"></i>
                                                 <p className="text-[9px] font-bold text-slate-400 uppercase">Km</p>
                                                 <p className="font-black text-md text-slate-900">{Number(selectedCar.km)?.toLocaleString()}</p>
                                             </div>
-                                            <div className="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm flex flex-col items-center">
+                                            <div className="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm flex flex-col items-center text-center">
                                                 <i data-lucide="fuel" className="w-4 h-4 text-red-600 mb-2"></i>
                                                 <p className="text-[9px] font-bold text-slate-400 uppercase">Alim.</p>
-                                                <p className="font-black text-md text-slate-900 truncate w-full text-center">{selectedCar.alimentazione}</p>
+                                                <p className="font-black text-md text-slate-900 truncate w-full">{selectedCar.alimentazione}</p>
                                             </div>
-                                            <div className="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm flex flex-col items-center">
+                                            <div className="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm flex flex-col items-center text-center">
                                                 <i data-lucide="settings-2" className="w-4 h-4 text-red-600 mb-2"></i>
                                                 <p className="text-[9px] font-bold text-slate-400 uppercase">Cambio</p>
                                                 <p className="font-black text-md text-slate-900">{selectedCar.cambio || 'Manuale'}</p>
                                             </div>
                                         </div>
 
-                                        <div className="space-y-4">
+                                        <div className="space-y-4 w-full">
                                             <a href={`https://wa.me/393791849480?text=Buongiorno, vorrei informazioni sulla ${selectedCar.marca} ${selectedCar.modello} vista sul sito.`} target="_blank" className="w-full bg-green-500 hover:bg-green-600 text-white flex items-center justify-center gap-3 py-5 rounded-2xl font-black uppercase text-xs tracking-widest transition shadow-lg"><i data-lucide="message-circle" className="w-5 h-5"></i>WhatsApp</a>
                                             <a href="tel:+393791849480" className="w-full bg-slate-900 hover:bg-red-600 text-white flex items-center justify-center gap-3 py-5 rounded-2xl font-black uppercase text-xs tracking-widest transition shadow-lg"><i data-lucide="phone" className="w-5 h-5"></i>Chiama Ora</a>
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* Extended Details Section */}
                                 <div className="grid lg:grid-cols-3 gap-12 border-t pt-16">
-                                    <div className="lg:col-span-2">
+                                    <div className="lg:col-span-2 overflow-hidden max-w-full">
                                         <h3 className="text-2xl font-black uppercase italic mb-6 text-slate-900">Descrizione <span className="text-red-600">Completa</span></h3>
-                                        <div className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm">
-                                            <p className="text-slate-600 leading-relaxed whitespace-pre-line text-sm md:text-base">
+                                        <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
+                                            <p className="text-slate-600 leading-relaxed whitespace-pre-line text-sm md:text-base break-words">
                                                 {selectedCar.descrizione || "Nessuna descrizione dettagliata fornita per questo veicolo."}
                                             </p>
                                         </div>
                                     </div>
-                                    <div className="space-y-8">
+                                    <div className="space-y-8 w-full max-w-full">
                                         <h3 className="text-2xl font-black uppercase italic mb-6 text-slate-900">Scheda <span className="text-red-600">Tecnica</span></h3>
-                                        <div className="bg-slate-900 text-white p-8 rounded-[2rem] shadow-xl">
-                                            <ul className="space-y-5 text-sm uppercase font-bold tracking-wider">
+                                        <div className="bg-slate-900 text-white p-6 md:p-8 rounded-[2rem] shadow-xl w-full">
+                                            <ul className="space-y-5 text-xs md:text-sm uppercase font-bold tracking-wider">
                                                 <li className="flex justify-between border-b border-white/10 pb-2">
                                                     <span className="text-slate-400">Marca</span>
-                                                    <span>{selectedCar.marca}</span>
+                                                    <span className="text-right ml-2">{selectedCar.marca}</span>
                                                 </li>
                                                 <li className="flex justify-between border-b border-white/10 pb-2">
                                                     <span className="text-slate-400">Modello</span>
-                                                    <span>{selectedCar.modello}</span>
+                                                    <span className="text-right ml-2">{selectedCar.modello}</span>
                                                 </li>
                                                 <li className="flex justify-between border-b border-white/10 pb-2">
                                                     <span className="text-slate-400">Anno</span>
-                                                    <span>{selectedCar.anno}</span>
+                                                    <span className="text-right ml-2">{selectedCar.anno}</span>
                                                 </li>
                                                 <li className="flex justify-between border-b border-white/10 pb-2">
                                                     <span className="text-slate-400">Chilometri</span>
-                                                    <span>{Number(selectedCar.km)?.toLocaleString()} km</span>
+                                                    <span className="text-right ml-2">{Number(selectedCar.km)?.toLocaleString()} km</span>
                                                 </li>
                                                 <li className="flex justify-between border-b border-white/10 pb-2">
                                                     <span className="text-slate-400">Alimentazione</span>
-                                                    <span>{selectedCar.alimentazione}</span>
+                                                    <span className="text-right ml-2">{selectedCar.alimentazione}</span>
                                                 </li>
                                                 <li className="flex justify-between border-b border-white/10 pb-2">
                                                     <span className="text-slate-400">Cambio</span>
-                                                    <span>{selectedCar.cambio || "Manuale"}</span>
+                                                    <span className="text-right ml-2">{selectedCar.cambio || "Manuale"}</span>
                                                 </li>
                                                 <li className="flex justify-between border-b border-white/10 pb-2">
                                                     <span className="text-slate-400">Potenza</span>
-                                                    <span>{selectedCar.potenza ? `${selectedCar.potenza} CV` : "N/D"}</span>
+                                                    <span className="text-right ml-2">{selectedCar.potenza ? `${selectedCar.potenza} CV` : "N/D"}</span>
                                                 </li>
                                                 <li className="flex justify-between border-b border-white/10 pb-2">
                                                     <span className="text-slate-400">Cilindrata</span>
-                                                    <span>{selectedCar.cilindrata ? `${selectedCar.cilindrata} cc` : "N/D"}</span>
+                                                    <span className="text-right ml-2">{selectedCar.cilindrata ? `${selectedCar.cilindrata} cc` : "N/D"}</span>
                                                 </li>
                                                 <li className="flex justify-between border-b border-white/10 pb-2">
                                                     <span className="text-slate-400">Colore</span>
-                                                    <span>{selectedCar.colore || "N/D"}</span>
+                                                    <span className="text-right ml-2">{selectedCar.colore || "N/D"}</span>
                                                 </li>
                                             </ul>
                                         </div>
