@@ -147,6 +147,7 @@
                             <div className="flex gap-4 md:gap-8 text-[10px] font-bold uppercase tracking-widest text-slate-500">
                                 <button onClick={() => { setCurrentPage('home'); setSelectedCar(null); }} className={`hover:text-red-600 transition ${currentPage === 'home' ? 'text-red-600' : ''}`}>Home</button>
                                 <button onClick={() => { setCurrentPage('piazzale'); setSelectedCar(null); }} className={`hover:text-red-600 transition ${currentPage === 'piazzale' ? 'text-red-600' : ''}`}>Piazzale</button>
+                                <button onClick={() => { setCurrentPage('vendi'); setSelectedCar(null); }} className={`hover:text-red-600 transition ${currentPage === 'vendi' ? 'text-red-600' : ''}`}>Vendi Auto</button>
                                 <button onClick={() => { setCurrentPage('contatti'); setSelectedCar(null); }} className={`hover:text-red-600 transition ${currentPage === 'contatti' ? 'text-red-600' : ''}`}>Contatti</button>
                             </div>
                         </div>
@@ -380,6 +381,24 @@
                                             </a>
                                         </div>
                                     </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {currentPage === 'vendi' && (
+                            <div className="py-24 px-6 max-w-5xl mx-auto animate-in fade-in duration-700">
+                                <h2 className="text-5xl font-black uppercase italic mb-8 text-center">Vendi la tua <span className="text-red-600">Auto</span></h2>
+                                <p className="text-center text-slate-500 font-bold mb-12 text-sm">Compila il modulo sottostante con i dati del tuo veicolo per ricevere una valutazione gratuita e senza impegno.</p>
+                                <div className="bg-white p-4 md:p-8 rounded-[3rem] shadow-xl border border-slate-100 flex justify-center w-full h-[900px]">
+                                    <iframe 
+                                        src="https://docs.google.com/forms/d/e/1FAIpQLSeYtcqgrOejvWqClIlEUneC2LPtTNzf67413H_mxFtcnGdnbw/viewform?embedded=true" 
+                                        width="100%" 
+                                        height="100%" 
+                                        frameBorder="0" 
+                                        marginHeight="0" 
+                                        marginWidth="0"
+                                        className="rounded-2xl"
+                                    >Caricamento in corso…</iframe>
                                 </div>
                             </div>
                         )}
