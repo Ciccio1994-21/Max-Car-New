@@ -55,7 +55,8 @@
             
             const initialForm = {
                 marca: '', modello: '', prezzo: '', anno: '', km: '', 
-                alimentazione: 'Diesel', categoria: 'SUV', descrizione: '', immagini: []
+                alimentazione: 'Diesel', categoria: 'SUV', descrizione: '', 
+                immagini: [], potenza: '', cilindrata: '', colore: ''
             };
             
             const [newCar, setNewCar] = useState(initialForm);
@@ -141,7 +142,10 @@
                     alimentazione: car.alimentazione || 'Diesel',
                     categoria: car.categoria || 'SUV',
                     descrizione: car.descrizione || '',
-                    immagini: car.galleria || [car.immagine]
+                    potenza: car.potenza || '',
+                    cilindrata: car.cilindrata || '',
+                    colore: car.colore || '',
+                    immagini: car.galleria || (car.immagine ? [car.immagine] : [])
                 });
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             };
@@ -162,6 +166,8 @@
                         prezzo: Number(newCar.prezzo),
                         km: Number(newCar.km),
                         anno: Number(newCar.anno),
+                        potenza: newCar.potenza ? Number(newCar.potenza) : null,
+                        cilindrata: newCar.cilindrata ? Number(newCar.cilindrata) : null,
                         immagine: newCar.immagini[0], 
                         galleria: newCar.immagini,   
                         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -179,7 +185,7 @@
                     cancelEdit();
                 } catch (error) {
                     console.error(error);
-                    alert("Errore durante il salvataggio. Le foto potrebbero essere troppo pesanti.");
+                    alert("Errore durante il salvataggio.");
                 }
                 setIsSubmitting(false);
             };
@@ -224,8 +230,6 @@
                                         {newCar.immagini.map((img, idx) => (
                                             <div key={idx} className="img-card relative aspect-square rounded-xl overflow-hidden border border-white/10 bg-slate-900 group">
                                                 <img src={img} className="w-full h-full object-cover" />
-                                                
-                                                {/* Controlli ordinamento */}
                                                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-1">
                                                     <div className="flex justify-between">
                                                         <button type="button" onClick={() => moveImage(idx, -1)} className="bg-white/20 hover:bg-white/40 p-1 rounded backdrop-blur-md">
@@ -239,7 +243,6 @@
                                                         </button>
                                                     </div>
                                                 </div>
-
                                                 {idx === 0 && <div className="absolute bottom-0 left-0 right-0 bg-red-600 text-[8px] text-center font-bold uppercase py-0.5 text-white">Copertina</div>}
                                             </div>
                                         ))}
@@ -260,9 +263,16 @@
                                     </div>
 
                                     <div className="grid grid-cols-3 gap-2">
-                                        <input required type="number" placeholder="Prezzo" className="p-3 rounded-xl text-sm" value={newCar.prezzo} onChange={e => setNewCar({...newCar, prezzo: e.target.value})} />
+                                        <input required type="number" placeholder="Prezzo (€)" className="p-3 rounded-xl text-sm" value={newCar.prezzo} onChange={e => setNewCar({...newCar, prezzo: e.target.value})} />
                                         <input required type="number" placeholder="Anno" className="p-3 rounded-xl text-sm" value={newCar.anno} onChange={e => setNewCar({...newCar, anno: e.target.value})} />
                                         <input required type="number" placeholder="KM" className="p-3 rounded-xl text-sm" value={newCar.km} onChange={e => setNewCar({...newCar, km: e.target.value})} />
+                                    </div>
+
+                                    {/* Nuovi Campi Tecnici */}
+                                    <div className="grid grid-cols-3 gap-2">
+                                        <input type="number" placeholder="Potenza (CV)" className="p-3 rounded-xl text-sm" value={newCar.potenza} onChange={e => setNewCar({...newCar, potenza: e.target.value})} />
+                                        <input type="number" placeholder="Cilindrata (cc)" className="p-3 rounded-xl text-sm" value={newCar.cilindrata} onChange={e => setNewCar({...newCar, cilindrata: e.target.value})} />
+                                        <input placeholder="Colore" className="p-3 rounded-xl text-sm" value={newCar.colore} onChange={e => setNewCar({...newCar, colore: e.target.value})} />
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-3">
@@ -303,7 +313,7 @@
                         <div className="lg:col-span-2 space-y-4">
                             <div className="flex justify-between items-end mb-2">
                                 <h2 className="font-bold uppercase tracking-widest text-xs text-slate-500">Auto Online ({autoList.length})</h2>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase italic">Max Car Tivoli - Real-time Database</p>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase italic">Max Car Tivoli - Database</p>
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -317,10 +327,11 @@
                                             <div className="text-[10px] text-slate-400 font-bold mt-1 uppercase">
                                                 {car.anno} • {car.km?.toLocaleString()} KM • <span className="text-white">€{car.prezzo?.toLocaleString()}</span>
                                             </div>
-                                            <div className="flex gap-1 mt-2">
-                                                {car.galleria?.map((_, i) => (
-                                                    <div key={i} className={`w-2 h-1 rounded-full ${i === 0 ? 'bg-red-600' : 'bg-red-600/30'}`}></div>
-                                                ))}
+                                            {/* Badge tecnici rapidi */}
+                                            <div className="flex flex-wrap gap-2 mt-2">
+                                                {car.potenza && <span className="text-[8px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400 font-bold uppercase">{car.potenza} CV</span>}
+                                                {car.cilindrata && <span className="text-[8px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400 font-bold uppercase">{car.cilindrata} cc</span>}
+                                                {car.colore && <span className="text-[8px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400 font-bold uppercase">{car.colore}</span>}
                                             </div>
                                         </div>
                                         
