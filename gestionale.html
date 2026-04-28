@@ -161,24 +161,31 @@
                 
                 setIsSubmitting(true);
                 try {
-                    const carData = {
-                        ...newCar,
+                    // Creiamo l'oggetto da inviare pulendo i valori numerici
+                    // Nota: usiamo "potenza" come chiave minuscola per compatibilità
+                    const payload = {
+                        marca: newCar.marca,
+                        modello: newCar.modello,
                         prezzo: Number(newCar.prezzo),
                         km: Number(newCar.km),
                         anno: Number(newCar.anno),
+                        alimentazione: newCar.alimentazione,
+                        categoria: newCar.categoria,
+                        descrizione: newCar.descrizione,
                         potenza: newCar.potenza ? Number(newCar.potenza) : null,
                         cilindrata: newCar.cilindrata ? Number(newCar.cilindrata) : null,
+                        colore: newCar.colore || '',
                         immagine: newCar.immagini[0], 
                         galleria: newCar.immagini,   
                         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                     };
 
                     if (editingId) {
-                        await db.collection(COLLECTION_PATH).doc(editingId).update(carData);
+                        await db.collection(COLLECTION_PATH).doc(editingId).update(payload);
                         alert("Annuncio aggiornato!");
                     } else {
-                        carData.createdAt = firebase.firestore.FieldValue.serverTimestamp();
-                        await db.collection(COLLECTION_PATH).add(carData);
+                        payload.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+                        await db.collection(COLLECTION_PATH).add(payload);
                         alert("Auto pubblicata!");
                     }
                     
@@ -225,7 +232,6 @@
                                 </div>
 
                                 <div className="space-y-4">
-                                    {/* Griglia Ordinamento Immagini */}
                                     <div className="grid grid-cols-3 gap-2">
                                         {newCar.immagini.map((img, idx) => (
                                             <div key={idx} className="img-card relative aspect-square rounded-xl overflow-hidden border border-white/10 bg-slate-900 group">
@@ -255,7 +261,6 @@
                                             </label>
                                         )}
                                     </div>
-                                    <p className="text-[9px] text-slate-500 text-center font-bold uppercase">Trascina le foto a sinistra per impostare la copertina</p>
 
                                     <div className="grid grid-cols-2 gap-3">
                                         <input required placeholder="Marca" className="p-3 rounded-xl text-sm" value={newCar.marca} onChange={e => setNewCar({...newCar, marca: e.target.value})} />
@@ -268,7 +273,6 @@
                                         <input required type="number" placeholder="KM" className="p-3 rounded-xl text-sm" value={newCar.km} onChange={e => setNewCar({...newCar, km: e.target.value})} />
                                     </div>
 
-                                    {/* Nuovi Campi Tecnici */}
                                     <div className="grid grid-cols-3 gap-2">
                                         <input type="number" placeholder="Potenza (CV)" className="p-3 rounded-xl text-sm" value={newCar.potenza} onChange={e => setNewCar({...newCar, potenza: e.target.value})} />
                                         <input type="number" placeholder="Cilindrata (cc)" className="p-3 rounded-xl text-sm" value={newCar.cilindrata} onChange={e => setNewCar({...newCar, cilindrata: e.target.value})} />
@@ -313,7 +317,7 @@
                         <div className="lg:col-span-2 space-y-4">
                             <div className="flex justify-between items-end mb-2">
                                 <h2 className="font-bold uppercase tracking-widest text-xs text-slate-500">Auto Online ({autoList.length})</h2>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase italic">Max Car Tivoli - Database</p>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase italic">Max Car Tivoli - Cloud Database</p>
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -327,38 +331,24 @@
                                             <div className="text-[10px] text-slate-400 font-bold mt-1 uppercase">
                                                 {car.anno} • {car.km?.toLocaleString()} KM • <span className="text-white">€{car.prezzo?.toLocaleString()}</span>
                                             </div>
-                                            {/* Badge tecnici rapidi */}
                                             <div className="flex flex-wrap gap-2 mt-2">
-                                                {car.potenza && <span className="text-[8px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400 font-bold uppercase">{car.potenza} CV</span>}
+                                                {car.potenza && <span className="text-[8px] bg-red-600/20 px-1.5 py-0.5 rounded text-red-400 font-bold uppercase">{car.potenza} CV</span>}
                                                 {car.cilindrata && <span className="text-[8px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400 font-bold uppercase">{car.cilindrata} cc</span>}
                                                 {car.colore && <span className="text-[8px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400 font-bold uppercase">{car.colore}</span>}
                                             </div>
                                         </div>
                                         
                                         <div className="flex flex-col gap-2">
-                                            <button 
-                                                onClick={() => startEdit(car)}
-                                                className="p-2 bg-blue-600/10 text-blue-400 rounded-lg md:opacity-0 group-hover:opacity-100 transition hover:bg-blue-600 hover:text-white"
-                                            >
+                                            <button onClick={() => startEdit(car)} className="p-2 bg-blue-600/10 text-blue-400 rounded-lg md:opacity-0 group-hover:opacity-100 transition hover:bg-blue-600 hover:text-white">
                                                 <i data-lucide="edit-3" className="w-4 h-4"></i>
                                             </button>
-                                            <button 
-                                                onClick={() => deleteCar(car.id)}
-                                                className="p-2 bg-red-600/10 text-red-600 rounded-lg md:opacity-0 group-hover:opacity-100 transition hover:bg-red-600 hover:text-white"
-                                            >
+                                            <button onClick={() => deleteCar(car.id)} className="p-2 bg-red-600/10 text-red-600 rounded-lg md:opacity-0 group-hover:opacity-100 transition hover:bg-red-600 hover:text-white">
                                                 <i data-lucide="trash-2" className="w-4 h-4"></i>
                                             </button>
                                         </div>
                                     </div>
                                 ))}
                             </div>
-                            
-                            {autoList.length === 0 && (
-                                <div className="text-center py-20 border-2 border-dashed border-white/5 rounded-[3rem]">
-                                    <i data-lucide="car" className="w-12 h-12 mx-auto mb-4 opacity-10"></i>
-                                    <p className="text-slate-500 font-bold uppercase text-xs tracking-widest">Piazzale Vuoto</p>
-                                </div>
-                            )}
                         </div>
                     </main>
                 </div>
