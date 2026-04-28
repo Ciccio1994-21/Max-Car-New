@@ -40,6 +40,10 @@
         .social-link:hover .social-icon-img {
             transform: scale(1.15);
         }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     </style>
 </head>
 <body>
@@ -52,9 +56,8 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useMemo } = React;
 
-        // Configurazione Firebase
         const firebaseConfig = {
             apiKey: "AIzaSyCB5yV6u4DtzUFb0jADUJobh8In52JNzp4",
             authDomain: "maxcar-7416d.firebaseapp.com",
@@ -71,7 +74,6 @@
         const appId = "max-car-tivoli";
         const COLLECTION_PATH = `artifacts/${appId}/public/data/automobili`;
 
-        // URL Icone Social
         const IG_ICON = "https://upload.wikimedia.org/wikipedia/commons/e/e7/Instagram_logo_2016.svg";
         const FB_ICON = "https://upload.wikimedia.org/wikipedia/commons/b/b8/2021_Facebook_icon.svg";
 
@@ -81,6 +83,7 @@
             const [autoList, setAutoList] = useState([]);
             const [filter, setFilter] = useState('Tutte');
             const [loading, setLoading] = useState(true);
+            const [activeImage, setActiveImage] = useState(null);
 
             useEffect(() => {
                 const init = async () => {
@@ -111,6 +114,25 @@
                 if (window.lucide) window.lucide.createIcons();
                 window.scrollTo(0, 0);
             }, [currentPage, autoList, filter, selectedCar]);
+
+            // Funzione per gestire l'apertura del prodotto
+            const openCarDetails = (car) => {
+                setSelectedCar(car);
+                setActiveImage(car.immagine); // Default alla cover
+                setCurrentPage('prodotto');
+            };
+
+            const carImages = useMemo(() => {
+                if (!selectedCar) return [];
+                const images = [selectedCar.immagine];
+                if (selectedCar.galleria && Array.isArray(selectedCar.galleria)) {
+                    // Evita duplicati se l'immagine principale è già in galleria
+                    selectedCar.galleria.forEach(img => {
+                        if (img !== selectedCar.immagine) images.push(img);
+                    });
+                }
+                return images;
+            }, [selectedCar]);
 
             return (
                 <div className="min-h-screen flex flex-col bg-slate-50">
@@ -177,7 +199,7 @@
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
                                     {autoList.filter(a => filter === 'Tutte' || a.categoria === filter).map(car => (
-                                        <div key={car.id} onClick={() => { setSelectedCar(car); setCurrentPage('prodotto'); }} className="bg-white rounded-[2rem] overflow-hidden shadow-xl hover:shadow-2xl transition duration-500 border border-slate-100 group cursor-pointer">
+                                        <div key={car.id} onClick={() => openCarDetails(car)} className="bg-white rounded-[2rem] overflow-hidden shadow-xl hover:shadow-2xl transition duration-500 border border-slate-100 group cursor-pointer">
                                             <div className="h-64 overflow-hidden relative">
                                                 <img src={car.immagine} className="w-full h-full object-cover group-hover:scale-110 transition duration-700" alt={car.modello} />
                                                 <div className="absolute top-4 left-4 bg-white/90 backdrop-blur px-3 py-1 rounded-full text-[10px] font-black text-slate-900 shadow-sm uppercase tracking-widest">{car.categoria}</div>
@@ -204,32 +226,116 @@
                                 <button onClick={() => setCurrentPage('piazzale')} className="flex items-center gap-2 text-slate-500 font-bold uppercase text-xs mb-8 hover:text-red-600 transition">
                                     <i data-lucide="arrow-left" className="w-4 h-4"></i> Torna al piazzale
                                 </button>
-                                <div className="grid lg:grid-cols-2 gap-12">
+                                
+                                <div className="grid lg:grid-cols-2 gap-12 mb-16">
+                                    {/* Gallery Section */}
                                     <div className="space-y-4">
-                                        <div className="rounded-[2.5rem] overflow-hidden shadow-2xl bg-white border border-slate-100">
-                                            <img src={selectedCar.immagine} alt={selectedCar.modello} className="w-full h-auto object-cover aspect-video" />
+                                        <div className="rounded-[2.5rem] overflow-hidden shadow-2xl bg-white border border-slate-100 aspect-video relative">
+                                            <img src={activeImage} alt={selectedCar.modello} className="w-full h-full object-cover transition-opacity duration-300" />
                                         </div>
+                                        {carImages.length > 1 && (
+                                            <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar">
+                                                {carImages.map((img, idx) => (
+                                                    <div 
+                                                        key={idx} 
+                                                        onClick={() => setActiveImage(img)}
+                                                        className={`flex-shrink-0 w-24 h-24 rounded-2xl overflow-hidden cursor-pointer border-4 transition ${activeImage === img ? 'border-red-600 shadow-lg' : 'border-white opacity-70 hover:opacity-100'}`}
+                                                    >
+                                                        <img src={img} className="w-full h-full object-cover" />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
+
+                                    {/* Info Section */}
                                     <div className="flex flex-col">
                                         <span className="bg-red-100 text-red-600 px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest w-fit mb-4">{selectedCar.categoria}</span>
                                         <h1 className="text-5xl font-black uppercase italic tracking-tighter text-slate-900 leading-none mb-2">{selectedCar.marca}</h1>
                                         <p className="text-2xl text-red-600 font-bold uppercase mb-6">{selectedCar.modello}</p>
                                         <div className="text-4xl font-black text-slate-900 mb-8 italic">€ {Number(selectedCar.prezzo)?.toLocaleString()}</div>
-                                        <div className="grid grid-cols-2 gap-4 mb-10 text-center">
-                                            <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex flex-col items-center">
-                                                <i data-lucide="calendar" className="w-5 h-5 text-red-600 mb-2"></i>
-                                                <p className="text-[10px] font-bold text-slate-400 uppercase">Anno</p>
-                                                <p className="font-black text-lg text-slate-900">{selectedCar.anno}</p>
+                                        
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+                                            <div className="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm flex flex-col items-center">
+                                                <i data-lucide="calendar" className="w-4 h-4 text-red-600 mb-2"></i>
+                                                <p className="text-[9px] font-bold text-slate-400 uppercase">Anno</p>
+                                                <p className="font-black text-md text-slate-900">{selectedCar.anno}</p>
                                             </div>
-                                            <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex flex-col items-center">
-                                                <i data-lucide="gauge" className="w-5 h-5 text-red-600 mb-2"></i>
-                                                <p className="text-[10px] font-bold text-slate-400 uppercase">Km</p>
-                                                <p className="font-black text-lg text-slate-900">{Number(selectedCar.km)?.toLocaleString()}</p>
+                                            <div className="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm flex flex-col items-center">
+                                                <i data-lucide="gauge" className="w-4 h-4 text-red-600 mb-2"></i>
+                                                <p className="text-[9px] font-bold text-slate-400 uppercase">Km</p>
+                                                <p className="font-black text-md text-slate-900">{Number(selectedCar.km)?.toLocaleString()}</p>
+                                            </div>
+                                            <div className="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm flex flex-col items-center">
+                                                <i data-lucide="fuel" className="w-4 h-4 text-red-600 mb-2"></i>
+                                                <p className="text-[9px] font-bold text-slate-400 uppercase">Alim.</p>
+                                                <p className="font-black text-md text-slate-900 truncate w-full text-center">{selectedCar.alimentazione}</p>
+                                            </div>
+                                            <div className="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm flex flex-col items-center">
+                                                <i data-lucide="settings-2" className="w-4 h-4 text-red-600 mb-2"></i>
+                                                <p className="text-[9px] font-bold text-slate-400 uppercase">Cambio</p>
+                                                <p className="font-black text-md text-slate-900">{selectedCar.cambio || 'Manuale'}</p>
                                             </div>
                                         </div>
+
                                         <div className="space-y-4">
                                             <a href={`https://wa.me/393791849480?text=Buongiorno, vorrei informazioni sulla ${selectedCar.marca} ${selectedCar.modello} vista sul sito.`} target="_blank" className="w-full bg-green-500 hover:bg-green-600 text-white flex items-center justify-center gap-3 py-5 rounded-2xl font-black uppercase text-xs tracking-widest transition shadow-lg"><i data-lucide="message-circle" className="w-5 h-5"></i>WhatsApp</a>
                                             <a href="tel:+393791849480" className="w-full bg-slate-900 hover:bg-red-600 text-white flex items-center justify-center gap-3 py-5 rounded-2xl font-black uppercase text-xs tracking-widest transition shadow-lg"><i data-lucide="phone" className="w-5 h-5"></i>Chiama Ora</a>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Extended Details Section */}
+                                <div className="grid lg:grid-cols-3 gap-12 border-t pt-16">
+                                    <div className="lg:col-span-2">
+                                        <h3 className="text-2xl font-black uppercase italic mb-6 text-slate-900">Descrizione <span className="text-red-600">Completa</span></h3>
+                                        <div className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm">
+                                            <p className="text-slate-600 leading-relaxed whitespace-pre-line text-sm md:text-base">
+                                                {selectedCar.descrizione || "Nessuna descrizione dettagliata fornita per questo veicolo."}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-8">
+                                        <h3 className="text-2xl font-black uppercase italic mb-6 text-slate-900">Scheda <span className="text-red-600">Tecnica</span></h3>
+                                        <div className="bg-slate-900 text-white p-8 rounded-[2rem] shadow-xl">
+                                            <ul className="space-y-5 text-sm uppercase font-bold tracking-wider">
+                                                <li className="flex justify-between border-b border-white/10 pb-2">
+                                                    <span className="text-slate-400">Marca</span>
+                                                    <span>{selectedCar.marca}</span>
+                                                </li>
+                                                <li className="flex justify-between border-b border-white/10 pb-2">
+                                                    <span className="text-slate-400">Modello</span>
+                                                    <span>{selectedCar.modello}</span>
+                                                </li>
+                                                <li className="flex justify-between border-b border-white/10 pb-2">
+                                                    <span className="text-slate-400">Anno</span>
+                                                    <span>{selectedCar.anno}</span>
+                                                </li>
+                                                <li className="flex justify-between border-b border-white/10 pb-2">
+                                                    <span className="text-slate-400">Chilometri</span>
+                                                    <span>{Number(selectedCar.km)?.toLocaleString()} km</span>
+                                                </li>
+                                                <li className="flex justify-between border-b border-white/10 pb-2">
+                                                    <span className="text-slate-400">Alimentazione</span>
+                                                    <span>{selectedCar.alimentazione}</span>
+                                                </li>
+                                                <li className="flex justify-between border-b border-white/10 pb-2">
+                                                    <span className="text-slate-400">Cambio</span>
+                                                    <span>{selectedCar.cambio || "Manuale"}</span>
+                                                </li>
+                                                <li className="flex justify-between border-b border-white/10 pb-2">
+                                                    <span className="text-slate-400">Potenza</span>
+                                                    <span>{selectedCar.cavalli ? `${selectedCar.cavalli} CV` : "N/D"}</span>
+                                                </li>
+                                                <li className="flex justify-between border-b border-white/10 pb-2">
+                                                    <span className="text-slate-400">Cilindrata</span>
+                                                    <span>{selectedCar.cilindrata ? `${selectedCar.cilindrata} cc` : "N/D"}</span>
+                                                </li>
+                                                <li className="flex justify-between border-b border-white/10 pb-2">
+                                                    <span className="text-slate-400">Colore</span>
+                                                    <span>{selectedCar.colore || "N/D"}</span>
+                                                </li>
+                                            </ul>
                                         </div>
                                     </div>
                                 </div>
